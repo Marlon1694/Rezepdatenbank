@@ -1,0 +1,13 @@
+{
+  "name": "Rezepte → Notion",
+  "short_name": "Rezepte",
+  "description": "Rezept-Links transkribieren und in die Notion-Datenbank schreiben",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#faf8f5",
+  "theme_color": "#1f7a4d",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

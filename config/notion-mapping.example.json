@@ -1,0 +1,10 @@
+{
+  "_hinweis": "Kopiere diese Datei nach notion-mapping.json oder lass sie von 'npm run inspect:notion' erzeugen. Die Spaltennamen muessen exakt so geschrieben sein wie in Notion. Ein Feld auf null setzen schaltet es ab.",
+  "titel": "Name",
+  "tags": "Tags",
+  "zeit": "Zubereitungszeit",
+  "quelle": "Quelle",
+  "portionen": "Portionen",
+  "kueche": "Küche",
+  "datum": "Hinzugefügt"
+}

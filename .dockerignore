@@ -1,0 +1,9 @@
+node_modules
+data
+.env
+.git
+.gitignore
+tests
+docs
+README.md
+config/cookies.txt

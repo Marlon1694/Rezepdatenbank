@@ -1,0 +1,103 @@
+import { z } from "zod";
+
+/**
+ * Das Ausgabeschema entspricht exakt den sechs Feldern aus prompts/recipe.de.md.
+ * Aenderst du hier etwas, passe auch den Prompt und src/notion/blocks.ts an.
+ */
+
+/** "" und fehlende Felder werden zu null - das Modell laesst Optionales gern weg. */
+const optionalText = z
+  .string()
+  .optional()
+  .transform((v) => (v && v.trim() ? v.trim() : null));
+
+export const ZutatSchema = z.object({
+  /** "200 g", "1 EL", "1 cup (ca. 120 g)" - null, wenn im Video keine Menge genannt wird. */
+  menge: optionalText,
+  zutat: z.string().min(1),
+});
+
+export const ZutatenGruppeSchema = z.object({
+  /** "Zutaten" bei einfachen Rezepten, sonst z.B. "Fuer den Teig". */
+  gruppe: z.string().min(1).default("Zutaten"),
+  eintraege: z.array(ZutatSchema).min(1),
+});
+
+export const RecipeSchema = z.object({
+  emoji: z.string().min(1).max(8).default("🍽️"),
+  titel: z.string().min(1),
+  tags: z.array(z.string().min(1)).default([]),
+  zeit_text: z.string().default(""),
+  zeit_minuten: z.number().int().positive().optional().transform((v) => v ?? null),
+  zutaten: z.array(ZutatenGruppeSchema).min(1),
+  schritte: z.array(z.string().min(1)).min(1),
+  pro_tipp: z.string().default(""),
+  /** Optional, nur befuellt wenn die Notion-DB passende Spalten hat. */
+  portionen: optionalText,
+  kueche: optionalText,
+});
+
+export type Recipe = z.infer<typeof RecipeSchema>;
+export type Zutat = z.infer<typeof ZutatSchema>;
+export type ZutatenGruppe = z.infer<typeof ZutatenGruppeSchema>;
+
+/**
+ * Schema fuer Geminis strukturierte Ausgabe - bewusst von Hand gepflegt statt aus Zod
+ * generiert.
+ *
+ * Zwei Dinge sind hier Absicht:
+ * 1. Kein "nullable" - das ist OpenAPI-Dialekt, nicht JSON Schema. Optionale Felder
+ *    stehen stattdessen einfach nicht in "required" und duerfen fehlen.
+ * 2. Keine Defaults - die setzt Zod nach dem Empfang.
+ */
+export const GEMINI_RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    emoji: { type: "string", description: "Ein einzelnes passendes Koch-Emoji" },
+    titel: { type: "string", description: "Name des Gerichts, ohne Emoji" },
+    tags: {
+      type: "array",
+      items: { type: "string" },
+      description: "3-5 Schlagworte ohne fuehrendes #",
+    },
+    zeit_text: {
+      type: "string",
+      description: 'Geschaetzte Gesamtdauer als Text, z.B. "ca. 30 Minuten"',
+    },
+    zeit_minuten: { type: "integer", description: "Dieselbe Dauer in Minuten" },
+    zutaten: {
+      type: "array",
+      description: "Nach Verwendung gruppiert. Einfache Rezepte: eine Gruppe 'Zutaten'.",
+      items: {
+        type: "object",
+        properties: {
+          gruppe: { type: "string" },
+          eintraege: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                menge: {
+                  type: "string",
+                  description: "Weglassen, wenn im Material keine Menge genannt wird",
+                },
+                zutat: { type: "string" },
+              },
+              required: ["zutat"],
+            },
+          },
+        },
+        required: ["gruppe", "eintraege"],
+      },
+    },
+    schritte: {
+      type: "array",
+      items: { type: "string" },
+      description: "Ein Arbeitsschritt pro Eintrag, im Imperativ, ohne eigene Nummerierung",
+    },
+    pro_tipp: { type: "string", description: "Leer lassen, wenn im Material keiner vorkommt" },
+    portionen: { type: "string" },
+    kueche: { type: "string" },
+  },
+  required: ["emoji", "titel", "tags", "zeit_text", "zutaten", "schritte"],
+} as const;
