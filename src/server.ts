@@ -169,6 +169,9 @@ app.put("/api/jobs/:id/recipe", async (request, reply) => {
 
 await app.register(fastifyStatic, { root: join(here, "web"), index: ["index.html"] });
 
+/** Zeigt die fertigen Kurzbefehl-Werte mit der echten Adresse und dem Token. */
+app.get("/setup", (_request, reply) => reply.sendFile("setup.html"));
+
 // Deep-Links der Web-App auf die index.html leiten.
 app.setNotFoundHandler((request, reply) => {
   if (request.url.startsWith("/api/")) {

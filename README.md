@@ -53,9 +53,24 @@ Erst wenn davon nichts Verwertbares übrig bleibt, läuft faster-whisper an — 
 
 ## Schnellstart
 
+Auf dem Proxmox (LXC oder VM mit Docker):
+
 ```bash
 git clone <dein-repo> rezepte && cd rezepte
+bash setup.sh
+```
 
+Das Skript fragt die drei Zugangsdaten ab und **prüft jede einzeln gegen die echte
+API**, bevor irgendetwas startet — du merkst also sofort, wenn das Notion-Token nicht
+freigegeben ist, statt erst beim ersten Rezept. Danach erzeugt es das Zugriffs-Token,
+baut den Container, startet ihn und liest deine Notion-Spalten aus.
+
+Am Ende steht dort die Adresse und das Token. Fertig.
+
+<details>
+<summary>Lieber von Hand?</summary>
+
+```bash
 cp .env.example .env
 openssl rand -hex 32        # als APP_TOKEN eintragen
 nano .env                   # NOTION_TOKEN, NOTION_DATABASE_ID, GEMINI_API_KEY
@@ -63,8 +78,11 @@ nano .env                   # NOTION_TOKEN, NOTION_DATABASE_ID, GEMINI_API_KEY
 docker compose up -d --build
 docker compose exec app npx tsx scripts/inspect-notion-db.ts
 ```
+</details>
 
-Dann `http://<server-ip>:3000` im Browser öffnen.
+Dann `http://<server-ip>:3000` im Browser öffnen. Unter
+`http://<server-ip>:3000/setup` stehen die fertigen Werte für den iPhone-Kurzbefehl
+zum Kopieren — mit deiner echten Adresse und deinem Token bereits eingesetzt.
 
 ### Was du dafür brauchst
 
@@ -81,6 +99,7 @@ Details: [`docs/notion.md`](docs/notion.md)
 
 | Schritt | Anleitung |
 |---|---|
+| Alles in einem Rutsch | `bash setup.sh` |
 | Container auf Proxmox aufsetzen | [`docs/proxmox.md`](docs/proxmox.md) |
 | Notion verbinden und Spalten zuordnen | [`docs/notion.md`](docs/notion.md) |
 | Kurzbefehl fürs Teilen-Menü bauen | [`docs/ios-shortcut.md`](docs/ios-shortcut.md) |
