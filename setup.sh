@@ -80,21 +80,27 @@ while :; do
   read -r -p "  Notion-Datenbank-ID  : " NOTION_DATABASE_ID
   NOTION_DATABASE_ID="$(printf '%s' "$NOTION_DATABASE_ID" | tr -d ' ')"
 
-  # Falls die ganze URL eingefuegt wurde: die ID herausloesen.
-  # Notion schreibt sie in zwei Formen - 32 Hex-Zeichen am Stueck oder als UUID
-  # mit Bindestrichen. Beide muessen erkannt werden, ohne die UUID zu zerschneiden.
-  if printf '%s' "$NOTION_DATABASE_ID" | grep -q 'notion\.so'; then
-    path="${NOTION_DATABASE_ID%%\?*}"
-    found="$(printf '%s' "$path" | grep -oE '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32}' | tail -1)"
-    if [ -n "$found" ]; then
-      NOTION_DATABASE_ID="$found"
-      say "  ${DIM}Aus der URL gelesen: $NOTION_DATABASE_ID${OFF}"
-    else
-      warn "In dieser URL steckt keine erkennbare Datenbank-ID."
-      say "     ${DIM}Sie besteht aus 32 Zeichen (0-9, a-f), meist direkt vor dem '?v='.${OFF}"
-      say ""
-      continue
-    fi
+  # Die ID aus der Eingabe herausloesen - unabhaengig davon, was eingefuegt wurde:
+  # blanke ID, notion.so, app.notion.com oder notion.site. Notion schreibt sie in
+  # zwei Formen, 32 Hex-Zeichen am Stueck oder als UUID mit Bindestrichen.
+  #
+  # Der Query-Teil wird zuerst abgeschnitten: "?v=..." ist die Ansicht, nicht die
+  # Datenbank, und enthaelt ebenfalls eine 32-stellige ID.
+  raw="$NOTION_DATABASE_ID"
+  path="${raw%%\?*}"
+  found="$(printf '%s' "$path" | grep -oE '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32}' | tail -1)"
+
+  if [ -z "$found" ]; then
+    warn "Darin steckt keine erkennbare Datenbank-ID."
+    say "     ${DIM}Sie besteht aus 32 Zeichen (0-9, a-f) und steht in der URL${OFF}"
+    say "     ${DIM}direkt vor dem '?v='. Du kannst auch die ganze URL einfuegen.${OFF}"
+    say ""
+    continue
+  fi
+
+  if [ "$found" != "$raw" ]; then
+    NOTION_DATABASE_ID="$found"
+    say "  ${DIM}Erkannte ID: $NOTION_DATABASE_ID${OFF}"
   fi
   [ -n "$NOTION_DATABASE_ID" ] || { warn "Bitte eingeben."; continue; }
 

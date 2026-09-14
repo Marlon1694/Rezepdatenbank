@@ -29,14 +29,23 @@ ist aber ein Rechteproblem.
 
 ## 3. Datenbank-ID herausfinden
 
-Datenbank im Browser öffnen. Die URL sieht so aus:
+Datenbank im Browser öffnen. Je nachdem, wo du sie öffnest, sieht die URL so aus:
 
 ```
 https://www.notion.so/dein-workspace/a1b2c3d4e5f67890a1b2c3d4e5f67890?v=...
                                      └────────── das ist die ID ──────────┘
+
+https://app.notion.com/p/a1b2c3d4e5f67890a1b2c3d4e5f67890?v=...
+                         └────────── das ist die ID ──────────┘
 ```
 
 Die 32 Zeichen **vor** dem `?v=`. Bindestriche darin sind egal.
+
+> **Achtung:** Hinter `?v=` steht nochmal eine 32-stellige ID — das ist die *Ansicht*,
+> nicht die Datenbank. Die brauchst du nicht.
+
+`setup.sh` nimmt auch die komplette URL entgegen und holt sich die ID selbst heraus,
+in allen Schreibweisen (`notion.so`, `app.notion.com`, `notion.site`).
 
 > Benutzt du die Desktop-App: **•••** → **Link kopieren**, dann ist dieselbe ID enthalten.
 
