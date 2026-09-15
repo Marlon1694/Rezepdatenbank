@@ -8,6 +8,8 @@ export interface WebPage {
   canonicalUrl?: string;
   /** Bild der Seite, fuer das Notion-Titelbild. */
   thumbnailUrl?: string;
+  /** Rohes HTML - wird gebraucht, um einen Pinterest-Pin aufzuloesen. */
+  rawHtml?: string;
   text: string;
   /** Gesetzt, wenn die Seite ein schema.org/Recipe mitliefert. */
   jsonLd?: JsonLdRecipe;
@@ -40,7 +42,7 @@ export async function fetchPage(url: string, timeoutMs = 30_000): Promise<WebPag
     clearTimeout(timer);
   }
 
-  return parsePage(html, url);
+  return { ...parsePage(html, url), rawHtml: html };
 }
 
 /** Getrennt von fetchPage, damit es sich ohne Netzwerk testen laesst. */

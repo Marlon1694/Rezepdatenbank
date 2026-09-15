@@ -5,7 +5,7 @@ import { availableExtraFields, knownTags, knownOptions } from "../notion/mapper.
 import { upsertRecipe, type UpsertResult } from "../notion/upsert.ts";
 import { loadMapping } from "./mapping.ts";
 import { cleanUrl } from "../lib/url.ts";
-import type { Recipe } from "../llm/recipeSchema.ts";
+import { recipeShortcoming, type Recipe } from "../llm/recipeSchema.ts";
 
 export interface PipelineResult {
   recipe: Recipe;
@@ -54,6 +54,16 @@ export async function runPipeline(
     knownIngredients: knownOptions(schema, "zutatenliste", mapping),
     extraFields: availableExtraFields(schema, mapping),
   });
+
+  // Lieber nichts schreiben als eine Karte, die nach Rezept aussieht und keines ist.
+  const mangel = recipeShortcoming(recipe);
+  if (mangel) {
+    throw new Error(
+      `Die Quelle enthält kein vollständiges Rezept — ${mangel}. ` +
+        `Steht das Rezept dort wirklich im Text, oder verweist die Seite nur darauf? ` +
+        `(Ausgangstext: ${extracted.source}, ${extracted.text.length} Zeichen)`,
+    );
+  }
 
   // Hat die Seite eine Gesamtzeit mitgeliefert, ist die verlaesslicher als eine Schaetzung.
   if (extracted.hintMinutes && !recipe.zeit_minuten) {

@@ -7,6 +7,7 @@ import { fetchPage } from "./web.ts";
 import { looksLikeRecipe } from "./vtt.ts";
 import { transcribe } from "../transcribe/index.ts";
 import { isoDurationToMinutes } from "./jsonld.ts";
+import { isPinterestUrl, findPinTarget } from "./pinterest.ts";
 
 /** Woher der Text stammt - wandert in die Notion-Seite und die Web-App. */
 export type TextSource =
@@ -69,6 +70,25 @@ export function looksLikeVideoUrl(url: string): boolean {
  */
 export async function extract(url: string, onProgress: ProgressFn = () => {}): Promise<ExtractResult> {
   const cfg = getConfig();
+
+  // Pinterest zuerst aufloesen: Der Pin selbst enthaelt kein Rezept, nur einen
+  // Verweis darauf. Ohne diesen Schritt entstuende eine Karte mit Ueberschrift
+  // und einem einzigen Schritt - die sieht aus wie ein Ergebnis, ist aber keines.
+  if (isPinterestUrl(url)) {
+    onProgress("Pinterest-Pin wird aufgelöst");
+    const pin = await fetchPage(url);
+    const target = findPinTarget(pin.rawHtml ?? "");
+
+    if (!target) {
+      throw new Error(
+        "Dieser Pinterest-Pin verweist auf keine erkennbare Rezeptseite. " +
+          "Öffne den Pin, folge dem Link zum Originalrezept und teile stattdessen diese Adresse.",
+      );
+    }
+    console.log(`[pinterest] Pin verweist auf ${target}`);
+    onProgress("Originalrezept wird geladen");
+    return extract(target, onProgress);
+  }
 
   if (!looksLikeVideoUrl(url)) {
     onProgress("Seite wird gelesen");

@@ -127,3 +127,32 @@ export const GEMINI_RESPONSE_SCHEMA = {
   },
   required: ["emoji", "titel", "tags", "zeit_text", "zutaten", "schritte"],
 } as const;
+
+/**
+ * Ist das ueberhaupt ein brauchbares Rezept?
+ *
+ * Das Modell antwortet auch auf duenne Vorlagen pflichtschuldig im richtigen
+ * Format - aus einer Pinterest-Ueberschrift wurde so eine Karte mit drei
+ * Zutaten ohne Mengen und einem einzigen Schritt. Formal gueltig, zum Kochen
+ * unbrauchbar, und in der Datenbank schlimmer als gar kein Eintrag: Sie sieht
+ * aus wie ein Ergebnis.
+ *
+ * Gibt den Grund zurueck, oder einen leeren String wenn alles passt.
+ */
+export function recipeShortcoming(recipe: Recipe): string {
+  const eintraege = recipe.zutaten.flatMap((g) => g.eintraege);
+  const mitMenge = eintraege.filter((e) => e.menge && e.menge.trim()).length;
+
+  if (recipe.schritte.length < 2) {
+    return "die Anleitung besteht aus einem einzigen Schritt";
+  }
+  if (eintraege.length < 3) {
+    return `es wurden nur ${eintraege.length} Zutaten gefunden`;
+  }
+  // Ganz ohne Mengen laesst sich nicht kochen. Bei sehr vielen Zutaten kann es
+  // ein bewusst ungefaehr gehaltenes Rezept sein - dann lassen wir es durch.
+  if (mitMenge === 0 && eintraege.length < 6) {
+    return "keine einzige Zutat hat eine Mengenangabe";
+  }
+  return "";
+}

@@ -107,6 +107,29 @@ Details: [`docs/notion.md`](docs/notion.md)
 | HTTPS über Tailscale *(optional)* | [`docs/tailscale.md`](docs/tailscale.md) |
 | Instagram-Cookies hinterlegen | [`docs/cookies.md`](docs/cookies.md) |
 
+## Pinterest
+
+Ein Pinterest-Pin **enthält kein Rezept** — er ist ein Bild, ein Satz Beschreibung
+und ein Link auf die Seite, wo das Rezept tatsächlich steht. Wird ein Pin geteilt,
+löst die App ihn deshalb erst auf und verarbeitet die verlinkte Seite.
+
+Findet sich dort kein Verweis, bricht der Job mit einem Hinweis ab, statt aus der
+Pin-Überschrift eine Karte zu bauen, die nach Rezept aussieht und keines ist.
+
+## Unvollständige Quellen
+
+Vor dem Schreiben nach Notion wird geprüft, ob überhaupt ein brauchbares Rezept
+herauskam. Abgelehnt wird, was offensichtlich keines ist:
+
+- die Anleitung besteht aus einem einzigen Schritt
+- weniger als drei Zutaten
+- keine einzige Mengenangabe (außer bei sechs oder mehr Zutaten — manche Rezepte
+  sind bewusst ungefähr gehalten)
+
+Das Modell antwortet auch auf eine dünne Vorlage pflichtschuldig im richtigen
+Format. Ein formal gültiges, aber leeres Rezept ist in der Datenbank schlimmer als
+gar kein Eintrag: Es sieht aus wie ein Ergebnis.
+
 ## Denselben Link zweimal erfassen
 
 Passiert nichts Schlimmes: Vor dem Anlegen wird nach einer Seite mit derselben
