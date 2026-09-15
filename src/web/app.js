@@ -484,8 +484,25 @@ document.addEventListener("keydown", (e) => {
 /* Aus dem Kurzbefehl heraus kommt der Link als ?url=… herein.
    Ist das Token schon hinterlegt, wird er sofort abgeschickt - dann besteht der
    Kurzbefehl aus einer einzigen Aktion und es gibt nichts falsch zu machen. */
-const params = new URLSearchParams(location.search);
-const shared = params.get("url");
+/* Alles nach "?url=" nehmen, nicht nur bis zum ersten "&".
+   Der Kurzbefehl haengt die geteilte Adresse unveraendert an. Enthaelt sie
+   selbst Parameter (TikTok: "?is_from_webapp=1&sender_device=pc"), wuerde
+   URLSearchParams beim "&" abschneiden und den Rest als eigene Parameter lesen. */
+function sharedUrlFromQuery(search) {
+  const marker = search.indexOf("url=");
+  if (marker === -1) return "";
+  const raw = search.slice(marker + 4);
+  if (!raw) return "";
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    // Ein einzelnes "%" im Link laesst decodeURIComponent scheitern - dann
+    // eben unveraendert, das ist immer noch besser als gar nichts.
+    return raw;
+  }
+}
+
+const shared = sharedUrlFromQuery(location.search);
 if (shared) {
   $("urlInput").value = shared;
   // Parameter aus der Adresszeile nehmen, sonst wird beim Neuladen erneut gesendet.

@@ -37,6 +37,17 @@ Fertig. Das Feld enthält dann die Adresse und direkt dahinter die blaue Variabl
 > Text statt als blaue Variable, kommt beim Server keine URL an. Antippen und aus
 > der Leiste über der Tastatur auswählen.
 
+Richtig sieht das Feld so aus — Adresse mit `?url=` am Ende, direkt gefolgt von der
+blauen Variablen:
+
+```
+http://192.168.1.50:3000/?url=[Kurzbefehlseingabe]
+```
+
+Bei **„… von Share-Sheet erhalten"** oben lohnt es sich, die Eingabetypen auf
+**URLs** und **Text** einzugrenzen. Sonst nimmt der Kurzbefehl auch Bilder entgegen,
+mit denen er nichts anfangen kann.
+
 Beim ersten Teilen fragt die Web-App einmalig nach dem Token. Danach nie wieder —
 der Link wird dann sofort erfasst, du siehst kurz die Bestätigung und wechselst zurück.
 
