@@ -16,7 +16,7 @@ export async function extractRecipe(ctx: PromptContext): Promise<Recipe> {
       .join("; ");
     throw new Error(
       `Die Antwort des Modells passt nicht zum Rezept-Schema (${issues}). ` +
-        `Meist hilft ein erneuter Versuch; haeuft es sich, ist der Prompt in ` +
+        `Meist hilft ein erneuter Versuch; häuft es sich, ist der Prompt in ` +
         `prompts/recipe.de.md zu unscharf geworden.`,
     );
   }

@@ -71,7 +71,7 @@ app.post("/api/jobs", async (request, reply) => {
   const raw = body?.url;
 
   if (!isValidUrl(raw)) {
-    return reply.code(400).send({ error: "Bitte eine gueltige http(s)-URL schicken." });
+    return reply.code(400).send({ error: "Bitte eine gültige http(s)-URL schicken." });
   }
 
   const url = cleanUrl(raw);
@@ -132,7 +132,7 @@ app.put("/api/jobs/:id/recipe", async (request, reply) => {
   const parsed = RecipeSchema.safeParse(request.body);
   if (!parsed.success) {
     return reply.code(400).send({
-      error: "Das Rezept ist unvollstaendig.",
+      error: "Das Rezept ist unvollständig.",
       issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
     });
   }

@@ -12,7 +12,7 @@ export async function transcribeGemini(audioPath: string): Promise<TranscriptRes
   // Stunde deutlich darunter, aber eine klare Meldung ist besser als ein API-Fehler.
   if (size > 18 * 1024 * 1024) {
     throw new Error(
-      `Die Tonspur ist mit ${(size / 1024 / 1024).toFixed(1)} MB zu gross fuer den ` +
+      `Die Tonspur ist mit ${(size / 1024 / 1024).toFixed(1)} MB zu groß für den ` +
         `Gemini-Weg. Setze TRANSCRIBE_PROVIDER=local in der .env.`,
     );
   }

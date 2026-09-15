@@ -73,17 +73,17 @@ export function explainError(stderr: string): string {
       s.includes("rate-limit reached") || s.includes("empty media response")) {
     return (
       "Die Plattform verlangt einen Login. Hinterlege Cookies unter config/cookies.txt " +
-      "- siehe docs/cookies.md. Bei Instagram ist das inzwischen fast immer noetig."
+      "— siehe docs/cookies.md. Bei Instagram ist das inzwischen fast immer nötig."
     );
   }
   if (s.includes("sign in to confirm") || s.includes("bot")) {
     return (
-      "YouTube haelt den Server fuer einen Bot. Cookies hinterlegen (docs/cookies.md) " +
+      "YouTube hält den Server für einen Bot. Cookies hinterlegen (docs/cookies.md) " +
       "behebt das in aller Regel."
     );
   }
   if (s.includes("video unavailable") || s.includes("private video")) {
-    return "Das Video ist nicht (mehr) oeffentlich abrufbar.";
+    return "Das Video ist nicht (mehr) öffentlich abrufbar.";
   }
   if (s.includes("unsupported url")) {
     return "Diese Seite kennt yt-dlp nicht. Sie wird stattdessen als Webseite gelesen.";

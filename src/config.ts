@@ -40,6 +40,8 @@ const ConfigSchema = z.object({
 
   geminiApiKey: z.string().default(""),
   geminiModel: z.string().default("gemini-flash-latest"),
+  /** Wird angelaufen, wenn das Hauptmodell ueberlastet bleibt. Leer = keines. */
+  geminiFallbackModel: z.string().default(""),
 
   transcribeProvider: z.enum(["local", "gemini"]).default("local"),
   whisperModel: z.string().default("small"),
@@ -72,6 +74,7 @@ export function getConfig(): Config {
     notionDatabaseId: process.env.NOTION_DATABASE_ID,
     geminiApiKey: process.env.GEMINI_API_KEY,
     geminiModel: process.env.GEMINI_MODEL,
+    geminiFallbackModel: process.env.GEMINI_FALLBACK_MODEL,
     transcribeProvider: process.env.TRANSCRIBE_PROVIDER,
     whisperModel: process.env.WHISPER_MODEL,
     whisperComputeType: process.env.WHISPER_COMPUTE_TYPE,

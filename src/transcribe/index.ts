@@ -19,7 +19,7 @@ export async function transcribe(audioPath: string): Promise<TranscriptResult> {
 
   if (!result.text.trim()) {
     throw new Error(
-      "Die Transkription hat keinen Text ergeben. Enthaelt das Video ueberhaupt " +
+      "Die Transkription hat keinen Text ergeben. Enthält das Video überhaupt " +
         "gesprochene Anleitung? Manche TikToks zeigen das Rezept nur als eingeblendeten Text.",
     );
   }

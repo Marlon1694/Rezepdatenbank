@@ -221,8 +221,8 @@ export function buildProperties(
   const titleProp = findTitleProperty(props);
   if (!titleProp) {
     throw new Error(
-      "Die Notion-Datenbank hat keine Title-Spalte. Das kann eigentlich nicht sein - " +
-        "bitte 'npm run inspect:notion' ausfuehren und die Ausgabe pruefen.",
+      "Die Notion-Datenbank hat keine Title-Spalte. Das kann eigentlich nicht sein — " +
+        "bitte 'npm run inspect:notion' ausführen und die Ausgabe prüfen.",
     );
   }
   properties[titleProp.name] = {

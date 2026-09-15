@@ -74,7 +74,7 @@ export async function extract(url: string, onProgress: ProgressFn = () => {}): P
     }
     if (page.text.length < 200) {
       throw new Error(
-        "Auf der Seite war kaum Text zu finden. Laedt sie ihren Inhalt per JavaScript nach?",
+        "Auf der Seite war kaum Text zu finden. Lädt sie ihren Inhalt per JavaScript nach?",
       );
     }
     return { text: page.text, source: "Seitentext", title: page.title, transcribed: false };

@@ -14,7 +14,8 @@
     "recipe": "tsx scripts/run-once.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "models": "tsx scripts/list-models.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.3",

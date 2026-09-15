@@ -132,7 +132,19 @@ siehst du auch den Verlauf und kannst Rezepte vor dem Speichern korrigieren.
 npm run recipe -- <url>              # nach Notion schreiben
 npm run recipe -- <url> --dry-run    # nur anzeigen
 npm run inspect:notion               # Datenbank-Schema prüfen
+npm run models                       # verfügbare Gemini-Modelle auflisten
 ```
+
+### Wenn Gemini mit HTTP 503 antwortet
+
+Das Modell ist vorübergehend überlastet. Die App wiederholt den Aufruf bis zu
+viermal mit wachsender Wartezeit (3 s, 8 s, 20 s, 40 s) und wechselt danach auf
+`GEMINI_FALLBACK_MODEL`, falls gesetzt.
+
+Passiert es häufig, liegt es meist am Modellnamen: Die **`-latest`-Aliase zeigen auf
+experimentelle Modelle** mit engeren Limits und ohne zugesicherte Verfügbarkeit.
+`npm run models` listet auf, was dein Key kennt — trag von dort ein stabiles Modell
+als `GEMINI_MODEL` ein.
 
 ## Konfiguration
 
@@ -145,6 +157,9 @@ Alles über die `.env`, Vorlage in [`.env.example`](.env.example). Die wichtigst
 | `WHISPER_MODEL` | `small` | `tiny`/`base`/`small`/`medium` — Tempo gegen Qualität |
 | `FREE_TEXT_MIN_CHARS` | `400` | ab wann vorhandener Text als ausreichend gilt |
 | `TAGS_WITH_HASH` | `false` | Tags mit führendem `#` speichern |
+| `NEW_RECIPE_STATUS` | — | Status für neu erfasste Rezepte (nur beim Anlegen) |
+| `GEMINI_MODEL` | `gemini-flash-latest` | Modell für die Rezept-Extraktion |
+| `GEMINI_FALLBACK_MODEL` | — | Ausweichmodell bei Überlastung (`npm run models` zeigt die Namen) |
 | `YTDLP_AUTO_UPDATE` | `true` | yt-dlp beim Start aktualisieren |
 
 ## Entwicklung
