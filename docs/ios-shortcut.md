@@ -11,76 +11,64 @@ Du brauchst zweierlei:
 
 ---
 
-## Variante 1: Feuer und vergiss
+## Variante 1: Eine Aktion (empfohlen)
 
-Reicht völlig: Link abschicken, Bestätigung sehen, das Rezept landet im Hintergrund
-in Notion.
+Der Kurzbefehl öffnet nur eine Adresse — die Web-App schickt den Link dann selbst
+ab. Kein Header, kein JSON, keine Fehlerquellen.
+
+Deine fertige Adresse steht unter `http://<server-ip>:3000/setup` zum Kopieren.
+Sie sieht so aus, mit dem `?url=` am Ende:
+
+```
+http://192.168.1.50:3000/?url=
+```
 
 1. **Kurzbefehle** öffnen → **+** → oben auf den Namen tippen → *Rezept erfassen*
-2. **ⓘ (Info)** → **Bei Teilen-Blatt anzeigen** einschalten
-3. Darunter bei **Teilen-Blatt-Typen** alles abwählen außer **URLs** und **Text**
-4. Aktionen hinzufügen:
+2. Auf das **Info-Symbol** tippen und **Bei Teilen-Blatt anzeigen** einschalten.
+   Bei *Teilen-Blatt-Typen* alles abwählen außer **URLs** und **Text**.
+3. Aktion **„URL öffnen"** hinzufügen (im Suchfeld danach suchen)
+4. Adresse von oben in das Feld einfügen
+5. Ans **Ende** des Feldes tippen und aus der Variablenleiste über der Tastatur
+   **Kurzbefehlseingabe** wählen
+
+Fertig. Das Feld enthält dann die Adresse und direkt dahinter die blaue Variable.
+
+> **Der häufigste Fehler:** Steht dort das Wort „Kurzbefehlseingabe" als normaler
+> Text statt als blaue Variable, kommt beim Server keine URL an. Antippen und aus
+> der Leiste über der Tastatur auswählen.
+
+Beim ersten Teilen fragt die Web-App einmalig nach dem Token. Danach nie wieder —
+der Link wird dann sofort erfasst, du siehst kurz die Bestätigung und wechselst zurück.
+
+### Was passiert
+
+Safari öffnet sich kurz, zeigt „✓ … eingereiht" und du gehst zurück. Das ist der
+einzige Unterschied zum API-Weg unten, der still im Hintergrund läuft — dafür ist
+hier nichts einzustellen, was schiefgehen kann.
+
+## Variante 2: Im Hintergrund (API)
+
+Ohne Browserfenster, dafür mit Header und JSON-Anfragetext. Nimm diesen Weg, wenn
+Variante 1 läuft und dich das kurze Aufblitzen von Safari stört.
+
+Werte wieder unter `/setup`.
 
 **Aktion 1 — „Text"**
 ```
 http://192.168.1.50:3000
 ```
-*(deine Basis-URL, ohne Schrägstrich am Ende)*
 
 **Aktion 2 — „Inhalte von URL abrufen"**
 
 | Feld | Wert |
 |---|---|
-| URL | `Text` (die Variable aus Aktion 1) + `/api/jobs` direkt dahinter tippen |
+| URL | die Variable `Text` + `/api/jobs` dahinter getippt |
 | Methode | **POST** |
 | Header | `Authorization` = `Bearer DEIN_TOKEN` |
 | Anfragetext | **JSON** |
 | → Feld | `url` (Typ *Text*) = **Kurzbefehlseingabe** |
 
-**Aktion 3 — „Mitteilung anzeigen"**
-```
-Rezept wird verarbeitet …
-```
-
-Fertig.
-
-> **Zum JSON-Feld:** Auf *Neues Feld hinzufügen* → **Text** → als Schlüssel `url`
-> eintippen. Für den Wert ins Feld tippen, dann in der Variablenleiste über der
-> Tastatur **Kurzbefehlseingabe** wählen. Steht dort stattdessen der Text
-> „Kurzbefehlseingabe" als Buchstaben, ist es keine Variable und es funktioniert nicht.
-
----
-
-## Variante 2: Mit Rückmeldung
-
-Wartet, bis das Rezept fertig ist, und zeigt eine Mitteilung mit dem Notion-Link.
-Dauert je nach Video ein paar Sekunden bis zwei Minuten.
-
-Aktionen 1 und 2 wie oben, danach:
-
-**Aktion 3 — „Wörterbuchwert abrufen"**
-Schlüssel `id` aus *Inhalte von URL abrufen* → benenne das Ergebnis `JobID`.
-
-**Aktion 4 — „Wiederholen" (30-mal)**
-
-Darin:
-
-1. **Warten** — `5` Sekunden
-2. **Inhalte von URL abrufen**
-   - URL: `Text` + `/api/jobs/` + `JobID`
-   - Methode: **GET**
-   - Header: `Authorization` = `Bearer DEIN_TOKEN`
-3. **Wörterbuchwert abrufen** — Schlüssel `status`
-4. **Wenn** *Wert* **ist** `done`
-   - **Wörterbuchwert abrufen** — Schlüssel `notionPageUrl` aus Schritt 2
-   - **Mitteilung anzeigen** — Text: das Ergebnis
-   - **Aus Kurzbefehl austreten**
-5. **Sonst wenn** *Wert* **ist** `failed`
-   - **Wörterbuchwert abrufen** — Schlüssel `error`
-   - **Mitteilung anzeigen** — das Ergebnis
-   - **Aus Kurzbefehl austreten**
-
----
+**Aktion 3 — „Mitteilung anzeigen"** mit einem beliebigen Text.
 
 ## Web-App auf den Home-Screen
 

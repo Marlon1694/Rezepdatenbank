@@ -62,7 +62,7 @@ $("saveToken").addEventListener("click", async () => {
   try {
     await api("/api/jobs?limit=1");
     try { localStorage.setItem(TOKEN_KEY, token); } catch { /* egal */ }
-    showApp();
+    start();
   } catch {
     /* showSetup hat die Meldung bereits gesetzt */
   }
@@ -79,7 +79,7 @@ $("settingsBtn").addEventListener("click", () => {
 
 /* ── Einreichen ───────────────────────────────────────────────────────────── */
 
-async function submitUrl() {
+async function submitUrl(auto = false) {
   const input = $("urlInput");
   const url = input.value.trim();
   const msg = $("submitMsg");
@@ -95,7 +95,16 @@ async function submitUrl() {
     const job = await api("/api/jobs", { method: "POST", body: JSON.stringify({ url }) });
     input.value = "";
     msg.className = "msg ok";
-    msg.textContent = `Eingereiht (${job.platform}). Der Verlauf aktualisiert sich von selbst.`;
+    msg.textContent = auto
+      ? `✓ ${job.platform}-Link eingereiht. Du kannst zurück zur App wechseln.`
+      : `Eingereiht (${job.platform}). Der Verlauf aktualisiert sich von selbst.`;
+    // Aus dem Teilen-Menü heraus ist der Bildschirm oft nur kurz zu sehen -
+    // die Bestätigung muss auf einen Blick erkennbar sein.
+    if (auto) {
+      msg.style.fontSize = "17px";
+      msg.style.fontWeight = "700";
+      msg.scrollIntoView({ block: "center" });
+    }
     refresh();
   } catch (err) {
     msg.className = "msg err";
@@ -105,7 +114,7 @@ async function submitUrl() {
   }
 }
 
-$("submitBtn").addEventListener("click", submitUrl);
+$("submitBtn").addEventListener("click", () => submitUrl());
 $("urlInput").addEventListener("keydown", (e) => {
   if (e.key === "Enter") submitUrl();
 });
@@ -472,16 +481,26 @@ document.addEventListener("keydown", (e) => {
 
 /* ── Start ────────────────────────────────────────────────────────────────── */
 
-// Aus dem Kurzbefehl heraus kann ein Link direkt als ?url=… uebergeben werden.
+/* Aus dem Kurzbefehl heraus kommt der Link als ?url=… herein.
+   Ist das Token schon hinterlegt, wird er sofort abgeschickt - dann besteht der
+   Kurzbefehl aus einer einzigen Aktion und es gibt nichts falsch zu machen. */
 const params = new URLSearchParams(location.search);
 const shared = params.get("url");
 if (shared) {
   $("urlInput").value = shared;
+  // Parameter aus der Adresszeile nehmen, sonst wird beim Neuladen erneut gesendet.
   history.replaceState(null, "", location.pathname);
 }
 
+function start() {
+  showApp();
+  if (shared) submitUrl(true);
+}
+
 if (token) {
-  api("/api/jobs?limit=1").then(showApp).catch(() => {});
+  api("/api/jobs?limit=1").then(start).catch(() => {});
 } else {
-  showSetup("");
+  showSetup(
+    shared ? "Token eingeben — danach wird der geteilte Link direkt erfasst." : "",
+  );
 }
