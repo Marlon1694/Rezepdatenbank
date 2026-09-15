@@ -145,9 +145,16 @@ Nicht angetastet werden dabei:
 
 Damit das greift, werden verschiedene Schreibweisen derselben Seite auf eine Form
 gebracht: `youtu.be/ABC`, `youtube.com/watch?v=ABC`, `m.youtube.com/...` und
-`youtube.com/shorts/ABC` gelten als dasselbe Video, Tracking-Parameter und ein
-abschließender Schrägstrich spielen keine Rolle. Kurzlinks wie `vm.tiktok.com/XYZ`
-löst yt-dlp beim Abruf auf — in Notion landet dann die vollständige Adresse.
+`youtube.com/shorts/ABC` gelten als dasselbe Video, ein abschließender Schrägstrich
+spielt keine Rolle. Kurzlinks wie `vm.tiktok.com/XYZ` löst yt-dlp beim Abruf auf —
+in Notion landet dann die vollständige Adresse.
+
+Bei YouTube, Instagram, TikTok, Pinterest und Facebook werden **alle** Query-Parameter
+verworfen bis auf die, die das Video benennen (`?v=` bei YouTube). Diese Dienste hängen
+beim Teilen laufend neue Kennungen an — Instagram etwa `stkn`, das bei jedem Teilen
+anders lautet. Eine Liste bekannter Störenfriede müsste man jedem neuen hinterherpflegen;
+eine Erlaubnisliste nicht. Bei allen anderen Seiten wird nur entfernt, was bekannt als
+Tracking gilt — dort kann ein Parameter wie `?seite=2` inhaltlich wichtig sein.
 
 > Voraussetzung ist eine Spalte für die Quelle (bei dir `URL`). Ohne sie kann derselbe
 > Link nicht wiedererkannt werden und jeder Lauf legt eine neue Seite an.

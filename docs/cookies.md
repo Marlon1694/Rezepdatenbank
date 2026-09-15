@@ -1,10 +1,13 @@
 # Cookies für Instagram und YouTube
 
-Instagram verlangt inzwischen praktisch für jeden Abruf einen Login. YouTube fragt
-zunehmend ebenfalls nach, besonders bei Zugriffen aus Rechenzentren und von Servern,
-die häufig abrufen.
+Manche öffentlichen Instagram-Reels lassen sich auch ohne Login abrufen — probier es
+also erst einmal ohne. Verlangt Instagram einen Login (was bei privaten Konten und
+bei häufigen Abrufen von derselben Adresse passiert), hilft nur eine `cookies.txt`.
 
-TikTok und die meisten Food-Blogs funktionieren ohne.
+YouTube fragt zunehmend ebenfalls nach, besonders bei Zugriffen aus Rechenzentren
+und von Servern, die häufig abrufen.
+
+TikTok, Pinterest und die meisten Food-Blogs funktionieren ohne.
 
 ## Cookies exportieren
 

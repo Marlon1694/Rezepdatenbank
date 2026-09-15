@@ -86,6 +86,36 @@ describe("cleanUrl", () => {
     );
   });
 
+  it("entfernt bei bekannten Plattformen alles außer dem Nötigen", () => {
+    // Erlaubnisliste statt Sperrliste: Instagram hängt beim Teilen aus der App
+    // ein "stkn" an, das bei jedem Teilen anders lautet. Eine Sperrliste müsste
+    // man jedem neuen Parameter hinterherpflegen.
+    expect(cleanUrl("https://www.instagram.com/reel/DclNfDru8C6?stkn=dW1ibWNveHg2c2o2")).toBe(
+      "https://www.instagram.com/reel/DclNfDru8C6",
+    );
+    expect(cleanUrl("https://www.instagram.com/reel/ABC?völlig=neu&unbekannt=1")).toBe(
+      "https://www.instagram.com/reel/ABC",
+    );
+    expect(cleanUrl("https://www.tiktok.com/@koch/video/1?irgendwas=neu")).toBe(
+      "https://www.tiktok.com/@koch/video/1",
+    );
+  });
+
+  it("behält bei YouTube die Video-Kennung", () => {
+    // Ohne ?v= zeigt der Link auf nichts - das ist der eine Parameter, der bleibt.
+    expect(cleanUrl("https://www.youtube.com/watch?v=abc&pp=neu&list=xyz")).toBe(
+      "https://www.youtube.com/watch?v=abc",
+    );
+  });
+
+  it("geht bei unbekannten Seiten vorsichtiger vor", () => {
+    // Bei einem Blog kann ein Parameter inhaltlich wichtig sein - dort wird nur
+    // entfernt, was bekannt als Verfolgung gilt.
+    expect(cleanUrl("https://blog.de/rezept?seite=2&utm_source=newsletter")).toBe(
+      "https://blog.de/rezept?seite=2",
+    );
+  });
+
   it("lässt saubere URLs unangetastet", () => {
     expect(cleanUrl("https://www.chefkoch.de/rezepte/1/Pasta.html")).toBe(
       "https://www.chefkoch.de/rezepte/1/Pasta.html",

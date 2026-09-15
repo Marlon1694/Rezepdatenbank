@@ -3,6 +3,23 @@
  * derselbe TikTok, zweimal geteilt, kaeme sonst als zwei verschiedene Rezepte in Notion an.
  */
 
+/**
+ * Bei den bekannten Plattformen steckt die Identitaet vollstaendig im Pfad (oder
+ * bei YouTube in "v"). Alles andere ist Beiwerk.
+ *
+ * Eine Erlaubnisliste statt einer Sperrliste: Die Dienste erfinden laufend neue
+ * Parameter - Instagram etwa "stkn" beim Teilen aus der App - und jeder
+ * uebersehene macht aus demselben Rezept ein zweites.
+ */
+const KEEP_PARAMS: Array<{ host: RegExp; keep: string[] }> = [
+  { host: /(^|\.)youtube\.com$/i, keep: ["v"] },
+  { host: /(^|\.)instagram\.com$/i, keep: [] },
+  { host: /(^|\.)tiktok\.com$/i, keep: [] },
+  { host: /(^|\.)pinterest\.[a-z]{2,}(\.[a-z]{2,})?$/i, keep: [] },
+  { host: /(^|\.)facebook\.com$/i, keep: ["v"] },
+];
+
+/** Fuer alle uebrigen Seiten: nur bekannte Verfolgungs-Parameter entfernen. */
 const JUNK_PARAMS = [
   /^utm_/i,
   /^fbclid$/i,
@@ -17,6 +34,8 @@ const JUNK_PARAMS = [
   /^sender_device$/i,
   /^web_id$/i,
   /^share_app_id$/i,
+  /^stkn$/i,
+  /^img_index$/i,
 ];
 
 /**
@@ -64,10 +83,15 @@ function canonicalizeHost(url: URL): void {
 
 export function cleanUrl(raw: string): string {
   const url = new URL(raw.trim());
-  for (const key of [...url.searchParams.keys()]) {
-    if (JUNK_PARAMS.some((re) => re.test(key))) url.searchParams.delete(key);
-  }
   canonicalizeHost(url);
+
+  const rule = KEEP_PARAMS.find((r) => r.host.test(url.hostname));
+  for (const key of [...url.searchParams.keys()]) {
+    const entfernen = rule
+      ? !rule.keep.includes(key.toLowerCase())
+      : JUNK_PARAMS.some((re) => re.test(key));
+    if (entfernen) url.searchParams.delete(key);
+  }
 
   // Ein abschliessender Schraegstrich macht keinen Unterschied, waere fuer den
   // Vergleich aber eine andere Zeichenkette.
