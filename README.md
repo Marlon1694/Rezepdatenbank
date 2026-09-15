@@ -298,3 +298,14 @@ config/              notion-mapping.json, cookies.txt, ts-serve.json
 Bewusst **kein Redis und kein BullMQ**: Bei ein paar Rezepten am Tag reicht eine
 SQLite-gestützte Queue im selben Prozess. Ein zweiter Dienst wäre hier reiner
 Betriebsaufwand ohne Gegenwert.
+
+## Lizenz
+
+[MIT](LICENSE) — nutzen, ändern und weitergeben ist ausdrücklich erlaubt, samt
+Haftungsausschluss.
+
+Im Repository stecken **keine Zugangsdaten**. Die `.env` mit Notion-Token,
+Gemini-Key und `APP_TOKEN` ist durch `.gitignore` ausgeschlossen und entsteht erst
+lokal durch `setup.sh`; dasselbe gilt für `config/cookies.txt` und
+`config/notion-mapping.json`. Wer das Projekt nachbaut, braucht durchweg eigene
+Zugänge und eine eigene Notion-Datenbank.

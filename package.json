@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Rezept-Links von YouTube/Instagram/TikTok/Blogs transkribieren und nach Notion schreiben",
+  "license": "MIT",
   "engines": {
     "node": ">=22"
   },
