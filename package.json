@@ -1,0 +1,38 @@
+{
+  "name": "rezeptdatenbank",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Rezept-Links von YouTube/Instagram/TikTok/Blogs transkribieren und nach Notion schreiben",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "inspect:notion": "tsx scripts/inspect-notion-db.ts",
+    "recipe": "tsx scripts/run-once.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "models": "tsx scripts/list-models.ts"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.3",
+    "@google/genai": "^2.22.0",
+    "@mozilla/readability": "^0.6.0",
+    "@notionhq/client": "^5.26.0",
+    "better-sqlite3": "^13.0.3",
+    "fastify": "^5.12.4",
+    "linkedom": "^0.18.13",
+    "tsx": "^4.23.13",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.5.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
+  }
+}

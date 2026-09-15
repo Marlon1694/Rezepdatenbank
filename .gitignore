@@ -1,0 +1,12 @@
+node_modules/
+data/
+.env
+*.log
+
+# Zugangsdaten & lokale Anpassungen: Beispiele liegen als *.example im Repo
+config/cookies.txt
+config/notion-mapping.json
+
+# Python
+__pycache__/
+*.pyc

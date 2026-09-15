@@ -1,0 +1,45 @@
+services:
+  app:
+    build: .
+    image: rezeptdatenbank
+    container_name: rezepte
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      # Weg A: erreichbar im LAN bzw. ueber die UniFi-VPN
+      - "3000:3000"
+    volumes:
+      # Jobs, SQLite und das Whisper-Modell ueberleben so jeden Neustart
+      - ./data:/app/data
+      # cookies.txt und notion-mapping.json aenderst du ohne Rebuild
+      - ./config:/app/config
+      # Prompt-Aenderungen wirken sofort beim naechsten Rezept
+      - ./prompts:/app/prompts
+    networks: [rezepte]
+
+  # ── Weg B (optional): echtes HTTPS ueber Tailscale ─────────────────────────
+  # Wird nur mit  docker compose --profile tailscale up -d  gestartet.
+  # Ohne das Flag existiert dieser Container nicht - Weg A laeuft unveraendert.
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: rezepte-tailscale
+    profiles: ["tailscale"]
+    restart: unless-stopped
+    # ergibt https://rezepte.<dein-tailnet>.ts.net
+    hostname: rezepte
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      # Kein /dev/net/tun noetig - wichtig im unprivilegierten Proxmox-LXC.
+      # Fuer eingehendes "serve" reicht der Userspace-Modus vollstaendig.
+      TS_USERSPACE: "true"
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/ts-serve.json
+    volumes:
+      - ./data/tailscale:/var/lib/tailscale
+      - ./config/ts-serve.json:/config/ts-serve.json:ro
+    depends_on: [app]
+    networks: [rezepte]
+
+networks:
+  rezepte:
+    driver: bridge

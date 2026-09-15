@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Rezepte">
+<meta name="theme-color" content="#1f7a4d">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>Rezepte → Notion</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <h1>🍲 Rezepte → Notion</h1>
+  <button id="settingsBtn" class="icon-btn" title="Einstellungen" aria-label="Einstellungen">⚙︎</button>
+</header>
+
+<main>
+  <!-- Token-Abfrage beim ersten Start -->
+  <section id="setup" class="card" hidden>
+    <h2>Einmalige Einrichtung</h2>
+    <p class="muted">Das Zugriffs-Token steht in der <code>.env</code> des Servers unter <code>APP_TOKEN</code>.</p>
+    <label for="tokenInput">Token</label>
+    <input id="tokenInput" type="password" autocomplete="off" placeholder="APP_TOKEN">
+    <button id="saveToken" class="primary">Speichern</button>
+    <p id="setupError" class="error" hidden></p>
+  </section>
+
+  <section id="submit" class="card" hidden>
+    <label for="urlInput">Link zu einem Rezept</label>
+    <div class="row">
+      <input id="urlInput" type="url" inputmode="url" autocomplete="off"
+             placeholder="https://www.tiktok.com/…">
+      <button id="pasteBtn" class="ghost" title="Aus Zwischenablage einfügen">📋</button>
+    </div>
+    <button id="submitBtn" class="primary">Rezept erfassen</button>
+    <p id="submitMsg" class="msg" hidden></p>
+    <p class="muted small">YouTube, Instagram, TikTok, Food-Blogs — alles was einen Link hat.</p>
+  </section>
+
+  <section id="listSection" hidden>
+    <div class="list-head">
+      <h2>Verlauf</h2>
+      <button id="refreshBtn" class="ghost small-btn">Aktualisieren</button>
+    </div>
+    <div id="jobs" class="jobs"></div>
+    <p id="empty" class="muted" hidden>Noch nichts erfasst. Wirf oben einen Link ein.</p>
+  </section>
+</main>
+
+<!-- Detailansicht -->
+<div id="overlay" class="overlay" hidden>
+  <div class="sheet">
+    <header class="sheet-head">
+      <button id="closeDetail" class="ghost">← Zurück</button>
+      <a id="notionLink" class="ghost" target="_blank" rel="noopener" hidden>In Notion öffnen ↗</a>
+    </header>
+    <div id="detail" class="detail"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

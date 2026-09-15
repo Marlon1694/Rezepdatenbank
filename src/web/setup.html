@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Kurzbefehl einrichten</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<style>
+  .val {
+    display: flex; gap: 8px; align-items: center;
+    background: var(--bg); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 12px; margin: 6px 0 2px;
+  }
+  .val code {
+    flex: 1; min-width: 0; overflow-wrap: anywhere;
+    font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .val button { flex: 0 0 auto; padding: 8px 12px; font-size: 13px; }
+  ol.steps { padding-left: 20px; }
+  ol.steps > li { margin-bottom: 14px; }
+  .hint { font-size: 13.5px; color: var(--muted); margin: 4px 0 0; }
+  .warn { background: var(--err-bg); color: var(--err); padding: 12px; border-radius: 10px; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>Kurzbefehl einrichten</h1>
+  <a href="./" class="ghost small-btn">← Zurück</a>
+</header>
+
+<main>
+  <p class="muted">
+    Tippe auf <strong>Kopieren</strong> und füge den Wert direkt im Kurzbefehl ein.
+  </p>
+
+  <section class="card">
+    <h2>Der einfache Weg — eine Aktion</h2>
+    <p class="hint" style="margin-top:0">
+      Der Kurzbefehl öffnet nur diese Adresse. Die Web-App schickt den Link dann
+      selbst ab. Keine Header, kein JSON — es gibt nichts falsch zu machen.
+    </p>
+
+    <label style="margin-top:14px">Diese Adresse brauchst du</label>
+    <div class="val"><code id="openUrl">…</code><button data-copy="openUrl">Kopieren</button></div>
+
+    <ol class="steps" style="margin-top:18px">
+      <li><strong>Kurzbefehle</strong> öffnen → <strong>+</strong> → oben auf den Namen tippen
+          → <em>Rezept erfassen</em></li>
+      <li>Auf <strong>ⓘ</strong> (oder das Info-Symbol) tippen und
+          <strong>Bei Teilen-Blatt anzeigen</strong> einschalten</li>
+      <li>Aktion <strong>„URL öffnen"</strong> hinzufügen (danach suchen)</li>
+      <li>In das Adressfeld die Adresse von oben einfügen</li>
+      <li>Ans <strong>Ende</strong> tippen und aus der Variablenleiste über der Tastatur
+          <strong>Kurzbefehlseingabe</strong> wählen</li>
+    </ol>
+
+    <p class="hint">
+      Fertig sieht das Feld so aus: die Adresse, und direkt dahinter die blaue
+      Variable. Steht dort das Wort „Kurzbefehlseingabe" als normaler Text,
+      ist es keine Variable — dann antippen und aus der Leiste wählen.
+    </p>
+
+    <p class="hint">
+      Beim ersten Mal fragt die Web-App nach dem Token. Danach nie wieder —
+      der geteilte Link wird dann sofort erfasst.
+    </p>
+  </section>
+
+  <details class="card">
+    <summary style="cursor:pointer;font-weight:600">
+      Der API-Weg — läuft im Hintergrund, aber mehr einzustellen
+    </summary>
+    <p class="hint">
+      Hierbei öffnet sich kein Browserfenster. Dafür brauchst du Header und einen
+      JSON-Anfragetext, und genau dort geht es meistens schief.
+    </p>
+
+    <label style="margin-top:14px">Ziel-Adresse</label>
+    <div class="val"><code id="apiUrl">…</code><button data-copy="apiUrl">Kopieren</button></div>
+
+    <label style="margin-top:18px">Header-Name</label>
+    <div class="val"><code id="hdrName">Authorization</code><button data-copy="hdrName">Kopieren</button></div>
+
+    <label style="margin-top:18px">Header-Wert</label>
+    <div class="val"><code id="hdrValue">…</code><button data-copy="hdrValue">Kopieren</button></div>
+    <p class="hint">
+      Das Wort <code>Bearer</code>, ein Leerzeichen, dann das Token. Genau so.
+    </p>
+
+    <ol class="steps" style="margin-top:18px">
+      <li>Aktion <strong>„Inhalte von URL abrufen"</strong> hinzufügen</li>
+      <li>Adresse von oben einfügen, <strong>Methode</strong> auf <strong>POST</strong></li>
+      <li>Unter <strong>Header</strong> Name und Wert von oben eintragen</li>
+      <li><strong>Anfragetext</strong> auf <strong>JSON</strong> stellen</li>
+      <li>Feld hinzufügen → Typ <strong>Text</strong> → Schlüssel <code>url</code> →
+          als Wert <strong>Kurzbefehlseingabe</strong> aus der Variablenleiste</li>
+    </ol>
+  </details>
+
+  <section class="card">
+    <h2>Dein Token</h2>
+    <div class="val"><code id="tokenPlain">…</code><button data-copy="tokenPlain">Kopieren</button></div>
+    <p id="noToken" class="warn" hidden style="margin-top:12px">
+      Noch kein Token gespeichert. Öffne zuerst die <a href="./">Web-App</a> und gib es
+      dort ein — es steht in der <code>.env</code> deines Servers unter <code>APP_TOKEN</code>.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>Web-App auf den Home-Bildschirm</h2>
+    <p class="muted small" style="margin-top:0">
+      In Safari: <strong>Teilen</strong> → <strong>Zum Home-Bildschirm</strong>.
+      Dann hast du ein Icon wie bei einer App aus dem Store.
+    </p>
+  </section>
+</main>
+
+<script>
+  const base = location.origin;
+  let token = "";
+  try { token = localStorage.getItem("rezepte.token") || ""; } catch {}
+
+  // Der Kurzbefehl haengt die Kurzbefehlseingabe hinten an - deshalb endet die
+  // Adresse offen mit "?url=".
+  document.getElementById("openUrl").textContent = base + "/?url=";
+  document.getElementById("apiUrl").textContent = base + "/api/jobs";
+
+  if (token) {
+    document.getElementById("hdrValue").textContent = "Bearer " + token;
+    document.getElementById("tokenPlain").textContent = token;
+  } else {
+    document.getElementById("hdrValue").textContent = "Bearer <dein APP_TOKEN>";
+    document.getElementById("tokenPlain").textContent = "(noch nicht gespeichert)";
+    document.getElementById("noToken").hidden = false;
+  }
+
+  for (const btn of document.querySelectorAll("button[data-copy]")) {
+    btn.addEventListener("click", async () => {
+      const text = document.getElementById(btn.dataset.copy).textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        const before = btn.textContent;
+        btn.textContent = "Kopiert ✓";
+        setTimeout(() => (btn.textContent = before), 1400);
+      } catch {
+        // Zwischenablage gesperrt (etwa ohne HTTPS): dann von Hand markieren lassen.
+        const range = document.createRange();
+        range.selectNodeContents(document.getElementById(btn.dataset.copy));
+        const sel = getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        btn.textContent = "markiert";
+        setTimeout(() => (btn.textContent = "Kopieren"), 1400);
+      }
+    });
+  }
+</script>
+</body>
+</html>
