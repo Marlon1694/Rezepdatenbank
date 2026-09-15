@@ -4,12 +4,17 @@ import { RecipeSchema } from "../src/llm/recipeSchema.ts";
 import type { DataSourceSchema } from "../src/notion/client.ts";
 
 /**
- * Gegen das tatsaechliche Schema der Datenbank "Rezeptbuch" - so wie
- * scripts/inspect-notion-db.ts es ausgelesen hat. Damit ist geprueft, dass die
- * Zuordnung fuer genau diese Datenbank stimmt und nicht nur allgemein plausibel ist.
+ * Gegen ein realistisches Schema, wie scripts/inspect-notion-db.ts es ausliest -
+ * mit allen Spaltentypen, die in einer Rezept-Datenbank vorkommen. Damit ist
+ * geprueft, dass die Zuordnung an einem echten Aufbau stimmt und nicht nur an
+ * einem ausgedachten Beispiel.
+ *
+ * Die Kennung ist bewusst ein Platzhalter: In einer Datenbank-ID steckt zwar kein
+ * Zugang - dafuer braucht es das Integrations-Token - aber sie benennt einen
+ * fremden Arbeitsbereich, und das gehoert nicht in oeffentlichen Quelltext.
  */
 const rezeptbuch: DataSourceSchema = {
-  dataSourceId: "2e3b9bd9-0867-8133-812f-000b0dd120e5",
+  dataSourceId: "00000000-0000-0000-0000-000000000000",
   databaseTitle: "Rezeptbuch",
   properties: [
     { name: "Schwierigkeitsgrad", type: "select", options: ["Mittel", "Schwer", "Leicht"] },
