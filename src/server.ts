@@ -75,6 +75,9 @@ export async function buildApp() {
   app.get("/api/health", async () => ({
     ok: true,
     ytdlp: await ytdlp.isAvailable(),
+    // TikTok verlangt einen Browser-Fingerabdruck. Fehlt curl_cffi, scheitert es
+    // dort mit einer Meldung, die nach einem kaputten Extraktor aussieht.
+    impersonation: await ytdlp.hasImpersonation(),
     transcribeProvider: cfg.transcribeProvider,
   }));
 

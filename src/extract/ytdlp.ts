@@ -85,6 +85,13 @@ export function explainError(stderr: string): string {
   if (s.includes("video unavailable") || s.includes("private video")) {
     return "Das Video ist nicht (mehr) öffentlich abrufbar.";
   }
+  if (s.includes("unexpected response from webpage request")) {
+    return (
+      "TikTok hat die Anfrage abgewiesen. Das passiert, wenn yt-dlp keinen " +
+      "Browser-Fingerabdruck vorweisen kann oder der Extraktor veraltet ist. " +
+      "Prüfen mit:  docker compose exec app yt-dlp --list-impersonate-targets"
+    );
+  }
   if (s.includes("unsupported url")) {
     return "Diese Seite kennt yt-dlp nicht. Sie wird stattdessen als Webseite gelesen.";
   }
@@ -105,12 +112,58 @@ export async function isAvailable(): Promise<boolean> {
   }
 }
 
+/**
+ * Aktualisiert yt-dlp ueber pip.
+ *
+ * Nicht ueber "yt-dlp -U": bei einer pip-Installation prueft das zwar die
+ * GitHub-Releases, ersetzt sich aber nicht selbst - es meldet brav "is up to
+ * date" und aendert nichts. Genau daran scheiterte die Aktualisierung bisher
+ * unbemerkt.
+ */
 export async function selfUpdate(): Promise<void> {
+  const channel = getConfig().ytdlpChannel;
+  const args = [
+    "install",
+    "--upgrade",
+    "--no-cache-dir",
+    ...(channel === "nightly" ? ["--pre"] : []),
+    "yt-dlp[default,curl-cffi]",
+  ];
+
+  await new Promise<void>((resolve) => {
+    const child = spawn("pip", args, { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    child.stdout.on("data", (c: Buffer) => (out += c.toString()));
+    child.stderr.on("data", (c: Buffer) => (out += c.toString()));
+
+    child.on("error", (err) => {
+      console.warn(`[yt-dlp] Aktualisierung übersprungen: ${err.message}`);
+      resolve();
+    });
+    child.on("close", async (code) => {
+      if (code === 0) {
+        const version = await run(["--version"], 15_000).catch(() => undefined);
+        console.log(
+          `[yt-dlp] Kanal ${channel}, Version ${version?.stdout.trim() || "unbekannt"}`,
+        );
+      } else {
+        console.warn(
+          `[yt-dlp] Aktualisierung fehlgeschlagen: ${out.trim().split("\n").pop()}`,
+        );
+      }
+      resolve();
+    });
+  });
+}
+
+/** Meldet, ob Browser-Fingerabdruecke verfuegbar sind - TikTok braucht sie. */
+export async function hasImpersonation(): Promise<boolean> {
   try {
-    const { code, stdout } = await run(["-U"], 120_000);
-    if (code === 0) console.log(`[yt-dlp] ${stdout.trim().split("\n").pop()}`);
-  } catch (err) {
-    console.warn(`[yt-dlp] Selbstupdate uebersprungen: ${String(err)}`);
+    const { stdout } = await run(["--list-impersonate-targets"], 20_000);
+    // Ohne curl_cffi steht hinter jedem Ziel "(unavailable)".
+    return stdout.split("\n").some((l) => /curl_cffi/.test(l) && !/unavailable/.test(l));
+  } catch {
+    return false;
   }
 }
 

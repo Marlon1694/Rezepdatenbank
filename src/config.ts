@@ -57,6 +57,12 @@ const ConfigSchema = z.object({
   /** Wert fuer die Status-Spalte bei NEU angelegten Rezepten. Leer = nicht setzen. */
   newRecipeStatus: z.string().default(""),
   ytdlpAutoUpdate: bool.default(true),
+  /**
+   * Welcher Kanal beim Selbstupdate. "nightly" ist der von yt-dlp selbst fuer
+   * normale Nutzer empfohlene: Korrekturen fuer TikTok und Co. erscheinen dort
+   * am Tag ihrer Entstehung, im stabilen Kanal erst Wochen spaeter.
+   */
+  ytdlpChannel: z.enum(["stable", "nightly"]).default("nightly"),
   cookiesFile: z.string().default("config/cookies.txt"),
 
   dataDir: z.string().default("data"),
@@ -88,6 +94,7 @@ export function getConfig(): Config {
     tagsWithHash: process.env.TAGS_WITH_HASH,
     newRecipeStatus: process.env.NEW_RECIPE_STATUS,
     ytdlpAutoUpdate: process.env.YTDLP_AUTO_UPDATE,
+    ytdlpChannel: process.env.YTDLP_CHANNEL,
     cookiesFile: process.env.COOKIES_FILE,
     dataDir: process.env.DATA_DIR,
   });

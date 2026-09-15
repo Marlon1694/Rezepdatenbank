@@ -36,8 +36,12 @@ ENV VIRTUAL_ENV=/opt/venv
 RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
+# yt-dlp[default,curl-cffi]: curl-cffi liefert die Browser-Fingerabdruecke, ohne
+# die TikTok seine Challenge nicht freigibt ("Unexpected response from webpage
+# request"). Ohne dieses Extra meldet --list-impersonate-targets alles als
+# "unavailable" - und der Fehler sieht wie ein kaputter Extraktor aus.
 RUN pip install --no-cache-dir \
-      yt-dlp \
+      "yt-dlp[default,curl-cffi]" \
       faster-whisper
 
 WORKDIR /app

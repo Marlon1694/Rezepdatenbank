@@ -58,6 +58,29 @@ Die Web-App zeigt in so einem Fall die Meldung:
 
 > *Die Plattform verlangt einen Login. Hinterlege Cookies unter config/cookies.txt*
 
+## TikTok: "Unexpected response from webpage request"
+
+Das ist kein Cookie-Problem. TikTok laesst nur Anfragen durch, die den
+TLS-Fingerabdruck eines echten Browsers vorweisen. yt-dlp kann das, braucht dafuer
+aber die Bibliothek `curl_cffi`. Fehlt sie, meldet
+
+```bash
+docker compose exec app yt-dlp --list-impersonate-targets
+```
+
+hinter jedem Eintrag `(unavailable)` - und TikTok schlaegt zuverlaessig fehl.
+
+Im Image ist sie ueber `yt-dlp[default,curl-cffi]` enthalten. Solltest du yt-dlp
+anderswo von Hand installiert haben:
+
+```bash
+pip install -U "yt-dlp[default,curl-cffi]"
+```
+
+Bleibt es dabei, ist meist der Extraktor selbst veraltet: TikTok aendert seine
+Seite haeufig, und Korrekturen erscheinen erst im naechtlichen Kanal
+(`YTDLP_CHANNEL=nightly`, Standard), im stabilen erst Wochen spaeter.
+
 ## Wenn es trotz Cookies nicht geht
 
 1. **yt-dlp aktualisieren.** Die Plattformen ändern ständig etwas; das ist mit Abstand
