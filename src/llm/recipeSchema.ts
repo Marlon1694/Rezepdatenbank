@@ -5,10 +5,17 @@ import { z } from "zod";
  * Aenderst du hier etwas, passe auch den Prompt und src/notion/blocks.ts an.
  */
 
-/** "" und fehlende Felder werden zu null - das Modell laesst Optionales gern weg. */
+/**
+ * "", null und fehlende Felder werden zu null - das Modell laesst Optionales gern
+ * weg, und die Web-App schickt beim Korrigieren zurueck, was sie bekommen hat.
+ *
+ * `nullish` statt `optional` ist dabei wesentlich: Sonst gibt das Schema zwar null
+ * aus, nimmt es aber nicht wieder an - und das erneute Speichern eines
+ * korrigierten Rezepts scheitert an einem Feld, das nie befuellt war.
+ */
 const optionalText = z
   .string()
-  .optional()
+  .nullish()
   .transform((v) => (v && v.trim() ? v.trim() : null));
 
 export const ZutatSchema = z.object({
@@ -28,7 +35,7 @@ export const RecipeSchema = z.object({
   titel: z.string().min(1),
   tags: z.array(z.string().min(1)).default([]),
   zeit_text: z.string().default(""),
-  zeit_minuten: z.number().int().positive().optional().transform((v) => v ?? null),
+  zeit_minuten: z.number().int().positive().nullish().transform((v) => v ?? null),
   zutaten: z.array(ZutatenGruppeSchema).min(1),
   schritte: z.array(z.string().min(1)).min(1),
   pro_tipp: z.string().default(""),

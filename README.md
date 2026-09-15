@@ -107,6 +107,24 @@ Details: [`docs/notion.md`](docs/notion.md)
 | HTTPS über Tailscale *(optional)* | [`docs/tailscale.md`](docs/tailscale.md) |
 | Instagram-Cookies hinterlegen | [`docs/cookies.md`](docs/cookies.md) |
 
+## Titelbild
+
+Mit `COVER_IMAGE=true` und einem `IMAGE_MODEL` wird zu jedem Rezept ein Bild
+erzeugt und als Notion-Titelbild gesetzt. Der Bild-Prompt liegt in
+[`prompts/cover.de.md`](prompts/cover.de.md) und ist wie der Rezept-Prompt frei
+editierbar.
+
+Das Bild wird zu Notion **hochgeladen**, nicht verlinkt — es bleibt also erhalten,
+unabhängig von diesem Server.
+
+> Das Bild zeigt nicht das Gericht aus dem Video, sondern eine Darstellung auf Basis
+> von Titel und Zutaten. Beim erneuten Erfassen desselben Links wird ein vorhandenes
+> Titelbild nur überschrieben, wenn tatsächlich ein neues entstanden ist — ein selbst
+> gesetztes bleibt sonst bestehen.
+
+Schlägt die Erzeugung fehl (Kontingent, Inhaltsfilter, Modell nicht verfügbar),
+landet das Rezept trotzdem in Notion, nur ohne Bild.
+
 ## Der Prompt gehört dir
 
 [`prompts/recipe.de.md`](prompts/recipe.de.md) enthält deinen Prompt im Wortlaut.
@@ -182,6 +200,8 @@ Alles über die `.env`, Vorlage in [`.env.example`](.env.example). Die wichtigst
 | `GEMINI_MODEL` | `gemini-3.5-flash` | Modell für die Rezept-Extraktion |
 | `GEMINI_FALLBACK_MODEL` | `gemini-2.5-flash` | Ausweichmodell bei Überlastung |
 | `GEMINI_TRANSCRIBE_MODEL` | `gemini-3.5-transcribe` | nur bei `TRANSCRIBE_PROVIDER=gemini` |
+| `COVER_IMAGE` | `false` | Titelbild zum Rezept erzeugen lassen |
+| `IMAGE_MODEL` | — | Bildmodell dafür (`npm run models` zeigt die Namen) |
 | `YTDLP_AUTO_UPDATE` | `true` | yt-dlp beim Start aktualisieren |
 | `YTDLP_CHANNEL` | `nightly` | `nightly` oder `stable` — siehe unten |
 

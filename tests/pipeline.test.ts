@@ -59,6 +59,16 @@ describe("Modell-Antwort → Notion", () => {
     expect(recipe.pro_tipp).toBe("Ein Spritzer Limette hebt die Süße auf.");
   });
 
+  it("nimmt die eigene Ausgabe wieder an", () => {
+    // Die Web-App schickt beim Korrigieren genau das zurueck, was sie bekam.
+    // Gibt das Schema null aus, muss es null auch wieder annehmen - sonst
+    // scheitert "Korrigieren & Notion aktualisieren" an einem leeren Feld.
+    const einmal = RecipeSchema.parse(MODEL_RESPONSE);
+    const zweimal = RecipeSchema.safeParse(einmal);
+    expect(zweimal.success).toBe(true);
+    expect(zweimal.data).toEqual(einmal);
+  });
+
   it("lehnt eine Antwort ohne Schritte ab, statt eine leere Seite anzulegen", () => {
     const { schritte, ...ohneSchritte } = MODEL_RESPONSE;
     expect(RecipeSchema.safeParse(ohneSchritte).success).toBe(false);

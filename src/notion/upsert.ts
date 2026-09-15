@@ -3,6 +3,8 @@ import { buildProperties, findProperty, type Mapping } from "./mapper.ts";
 import { buildRecipeBlocks, chunkBlocks } from "./blocks.ts";
 import type { Recipe } from "../llm/recipeSchema.ts";
 import { getConfig } from "../config.ts";
+import { generateCoverImage } from "../llm/image.ts";
+import { uploadCover } from "./cover.ts";
 
 export interface UpsertInput {
   recipe: Recipe;
@@ -102,6 +104,17 @@ export async function upsertRecipe(input: UpsertInput): Promise<UpsertResult> {
     hasTimeProperty: Boolean(findProperty(schema.properties, "zeit", mapping)),
   });
 
+  // Titelbild: laeuft parallel zum Rest und darf scheitern, ohne das Rezept
+  // mitzureissen.
+  let coverId: string | undefined;
+  if (!input.dryRun) {
+    const image = await generateCoverImage(input.recipe);
+    if (image) coverId = await uploadCover(image);
+  }
+  const cover = coverId
+    ? ({ type: "file_upload", file_upload: { id: coverId } } as const)
+    : undefined;
+
   const batches = chunkBlocks(blocks);
   const [firstBatch = [], ...restBatches] = batches;
 
@@ -127,6 +140,9 @@ export async function upsertRecipe(input: UpsertInput): Promise<UpsertResult> {
     await notion.pages.update({
       page_id: existingId,
       icon: { type: "emoji", emoji: input.recipe.emoji },
+      // Nur ueberschreiben, wenn ein neues Bild entstanden ist - sonst bliebe
+      // ein selbst gesetztes Titelbild auf der Strecke.
+      ...(cover ? { cover } : {}),
       properties: properties as never,
     });
     await clearPageContent(existingId);
@@ -141,6 +157,7 @@ export async function upsertRecipe(input: UpsertInput): Promise<UpsertResult> {
     const created = await notion.pages.create({
       parent: { type: "data_source_id", data_source_id: schema.dataSourceId },
       icon: { type: "emoji", emoji: input.recipe.emoji },
+      ...(cover ? { cover } : {}),
       properties: properties as never,
       children: firstBatch as never,
     });

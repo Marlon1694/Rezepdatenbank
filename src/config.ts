@@ -48,6 +48,12 @@ const ConfigSchema = z.object({
   /** Eigenes Modell fuer Audio, falls TRANSCRIBE_PROVIDER=gemini. */
   geminiTranscribeModel: z.string().default("gemini-3.5-transcribe"),
 
+  /** Titelbild zum Rezept erzeugen lassen? */
+  coverImage: bool.default(false),
+  /** Bildmodell. Leer = kein Titelbild. "npm run models" zeigt die Namen. */
+  imageModel: z.string().default(""),
+  coverPromptFile: z.string().default("prompts/cover.de.md"),
+
   transcribeProvider: z.enum(["local", "gemini"]).default("local"),
   whisperModel: z.string().default("small"),
   whisperComputeType: z.string().default("int8"),
@@ -87,6 +93,8 @@ export function getConfig(): Config {
     geminiModel: process.env.GEMINI_MODEL,
     geminiFallbackModel: process.env.GEMINI_FALLBACK_MODEL,
     geminiTranscribeModel: process.env.GEMINI_TRANSCRIBE_MODEL,
+    coverImage: process.env.COVER_IMAGE,
+    imageModel: process.env.IMAGE_MODEL,
     transcribeProvider: process.env.TRANSCRIBE_PROVIDER,
     whisperModel: process.env.WHISPER_MODEL,
     whisperComputeType: process.env.WHISPER_COMPUTE_TYPE,
