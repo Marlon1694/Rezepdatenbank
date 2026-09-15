@@ -147,6 +147,11 @@ unabhängig von diesem Server.
 Schlägt die Erzeugung fehl (Kontingent, Inhaltsfilter, Modell nicht verfügbar),
 landet das Rezept trotzdem in Notion, nur ohne Bild.
 
+> **Bildgenerierung ist nicht kostenlos.** Die freie Gemini-Stufe sieht für
+> Bildmodelle kein Kontingent vor — die API antwortet mit `429` und `limit: 0`.
+> Das ist kein aufgebrauchtes Kontingent, sondern gar keines. Dafür muss in der
+> Google-Cloud-Konsole die Abrechnung aktiviert sein; gerechnet wird pro Bild.
+
 ## Der Prompt gehört dir
 
 [`prompts/recipe.de.md`](prompts/recipe.de.md) enthält deinen Prompt im Wortlaut.

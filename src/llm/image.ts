@@ -132,9 +132,37 @@ export async function generateCoverImage(recipe: Recipe): Promise<GeneratedImage
     return image;
   } catch (err) {
     // Bewusst nur eine Warnung: das Rezept soll trotzdem nach Notion.
-    console.warn(
-      `[titelbild] uebersprungen: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    console.warn(`[titelbild] übersprungen: ${explainImageError(err, cfg.imageModel)}`);
     return undefined;
   }
+}
+
+/**
+ * Macht aus der JSON-Wand der API einen Satz, der weiterhilft.
+ *
+ * Der wichtige Fall ist "limit: 0": Das heisst nicht "Kontingent aufgebraucht",
+ * sondern dass die kostenlose Stufe fuer Bildmodelle ueberhaupt keines vorsieht.
+ * Warten hilft da nicht, nur Abrechnung aktivieren oder abschalten.
+ */
+export function explainImageError(err: unknown, model: string): string {
+  const raw = err instanceof Error ? err.message : String(err);
+
+  if (/limit:\s*0\b/.test(raw)) {
+    return (
+      `Die kostenlose Gemini-Stufe sieht für "${model}" kein Kontingent vor ` +
+      `(limit: 0) — Bildgenerierung ist dort nicht enthalten. Entweder in der ` +
+      `Google-Cloud-Konsole die Abrechnung aktivieren oder COVER_IMAGE=false setzen.`
+    );
+  }
+  if (/RESOURCE_EXHAUSTED|"code":\s*429/.test(raw)) {
+    return `Kontingent für "${model}" erschöpft. Später erneut versuchen.`;
+  }
+  if (/"code":\s*404|not found/i.test(raw)) {
+    return `Modell "${model}" ist unbekannt. "npm run models" zeigt die verfügbaren.`;
+  }
+  if (/PERMISSION_DENIED|"code":\s*403/.test(raw)) {
+    return `Der API-Key darf "${model}" nicht verwenden.`;
+  }
+  // Unbekanntes nicht verschlucken, aber auch nicht ungebremst ausschuetten.
+  return raw.length > 300 ? `${raw.slice(0, 300)}…` : raw;
 }

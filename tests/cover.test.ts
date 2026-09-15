@@ -59,3 +59,34 @@ describe("generateCoverImage", () => {
     expect(await generateCoverImage(recipe)).toBeUndefined();
   });
 });
+
+describe("explainImageError", () => {
+  it("erkennt ein Kontingent von null als 'nicht enthalten'", async () => {
+    const { explainImageError } = await import("../src/llm/image.ts");
+    // Genau diese Antwort kam aus der Praxis: kein aufgebrauchtes Kontingent,
+    // sondern von vornherein keines.
+    const raw =
+      '{"error":{"code":429,"message":"You exceeded your current quota. ' +
+      "* Quota exceeded for metric: generate_content_free_tier_requests, " +
+      'limit: 0, model: gemini-3.1-flash-image","status":"RESOURCE_EXHAUSTED"}}';
+    const text = explainImageError(new Error(raw), "gemini-3.1-flash-image");
+    expect(text).toContain("kein Kontingent");
+    expect(text).toContain("COVER_IMAGE=false");
+    expect(text).not.toContain("RESOURCE_EXHAUSTED");
+  });
+
+  it("unterscheidet das vom wirklich aufgebrauchten Kontingent", async () => {
+    const { explainImageError } = await import("../src/llm/image.ts");
+    const text = explainImageError(
+      new Error('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}'),
+      "m",
+    );
+    expect(text).toContain("erschöpft");
+  });
+
+  it("kürzt unbekannte Fehler, statt sie ungebremst auszuschütten", async () => {
+    const { explainImageError } = await import("../src/llm/image.ts");
+    const text = explainImageError(new Error("x".repeat(900)), "m");
+    expect(text.length).toBeLessThan(320);
+  });
+});
