@@ -33,14 +33,19 @@ async function main(): Promise<void> {
   const usable = (data.models ?? [])
     .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
     .map((m) => m.name.replace(/^models\//, ""))
-    // Bild-, Video- und Sprachmodelle taugen nicht zum Strukturieren von Rezepten.
-    .filter((n) => !/(embedding|aqa|imagen|veo|tts|image|audio)/i.test(n))
+    // Einbettungs- und Video-/Musikmodelle taugen fuer keinen unserer Schritte.
+    .filter((n) => !/(embedding|aqa|veo|tts|lyria)/i.test(n))
     .sort();
+
+  // Bildmodelle getrennt ausweisen: sie kommen fuer ein Titelbild in Frage,
+  // nicht fuer die Rezept-Extraktion.
+  const imageModels = usable.filter((n) => /(imagen|image|banana)/i.test(n));
+  const textModels = usable.filter((n) => !imageModels.includes(n));
 
   // "-latest" zeigt laut Google auf experimentelle Modelle mit engeren Limits -
   // fuer den Dauerbetrieb ist eine feste Version die ruhigere Wahl.
-  const stable = usable.filter((n) => !n.includes("latest") && !/preview|exp/i.test(n));
-  const rest = usable.filter((n) => !stable.includes(n));
+  const stable = textModels.filter((n) => !n.includes("latest") && !/preview|exp/i.test(n));
+  const rest = textModels.filter((n) => !stable.includes(n));
 
   console.log(`\n  Aktuell eingestellt: ${cfg.geminiModel}`);
   if (cfg.geminiFallbackModel) console.log(`  Ausweichmodell     : ${cfg.geminiFallbackModel}`);
@@ -55,6 +60,14 @@ async function main(): Promise<void> {
     console.log("  " + "-".repeat(60));
     console.log("  (engere Limits, Verfügbarkeit nicht zugesichert)");
     for (const n of rest) console.log(`  ${n}`);
+  }
+
+  if (imageModels.length) {
+    console.log(`\n  Bildmodelle (für ein Titelbild)`);
+    console.log("  " + "-".repeat(60));
+    for (const n of imageModels) console.log(`  ${n}`);
+  } else {
+    console.log(`\n  Bildmodelle: keine verfügbar`);
   }
 
   console.log(
