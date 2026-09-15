@@ -113,6 +113,27 @@ describe("buildRecipeBlocks", () => {
   });
 });
 
+describe("Zeitangabe", () => {
+  it("zeigt die Zeit im Text, wenn es dafür keine Spalte gibt", () => {
+    const blocks = buildRecipeBlocks(base, opts);
+    const texte = blocks
+      .filter((b) => b.type === "paragraph")
+      .map((b) => (b as { paragraph: { rich_text: Array<{ text: { content: string } }> } })
+        .paragraph.rich_text[0]?.text.content);
+    expect(texte).toContain("⏱️ ca. 25 Minuten");
+  });
+
+  it("lässt sie weg, wenn eine Kochzeit-Spalte existiert", () => {
+    // Notion zeigt die Eigenschaft ohnehin im Seitenkopf - im Text wäre sie Dopplung.
+    const blocks = buildRecipeBlocks(base, { ...opts, hasTimeProperty: true });
+    const texte = blocks
+      .filter((b) => b.type === "paragraph")
+      .map((b) => (b as { paragraph: { rich_text: Array<{ text: { content: string } }> } })
+        .paragraph.rich_text[0]?.text.content);
+    expect(texte).not.toContain("⏱️ ca. 25 Minuten");
+  });
+});
+
 describe("chunkText", () => {
   it("lässt Text unter dem Limit in einem Stück", () => {
     expect(chunkText("kurz")).toEqual(["kurz"]);

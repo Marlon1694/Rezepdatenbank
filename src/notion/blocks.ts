@@ -55,6 +55,11 @@ export interface BlockOptions {
   transcript?: string;
   /** Wie der Text gewonnen wurde - hilft beim Einschaetzen der Qualitaet. */
   transcriptSource?: string;
+  /**
+   * Gibt es eine eigene Spalte fuer die Zubereitungszeit? Dann zeigt Notion sie
+   * ohnehin im Seitenkopf an und dieselbe Angabe im Text waere nur Dopplung.
+   */
+  hasTimeProperty?: boolean;
 }
 
 export function buildRecipeBlocks(recipe: Recipe, opts: BlockOptions): Block[] {
@@ -71,7 +76,7 @@ export function buildRecipeBlocks(recipe: Recipe, opts: BlockOptions): Block[] {
     },
   });
 
-  if (recipe.zeit_text.trim()) {
+  if (recipe.zeit_text.trim() && !opts.hasTimeProperty) {
     blocks.push({
       object: "block",
       type: "paragraph",

@@ -27,6 +27,10 @@ exakt diesem Schema:
 - **Tags:** ohne führendes `#` — das ergänzt die Datenbank selbst. Bevorzuge Tags aus
   dieser Liste, wenn sie inhaltlich passen, statt neue Synonyme zu erfinden:
   {{BEKANNTE_TAGS}}
+- **Tags beschreiben das Rezept, nicht das Video.** Übernimm keine Anpreisungen aus
+  Titel oder Beschreibung. Heißt das Video „in 5 Minuten“ oder „so schnell“, das
+  Rezept braucht aber zwei Stunden, ist es **nicht** schnell. Prüfe solche Tags gegen
+  die Zubereitungszeit und die Schritte, die du selbst ermittelt hast.
 - **Sprache:** Immer Deutsch, auch wenn das Video englisch ist. Übersetze Zutaten- und
   Gerätenamen in die im deutschen Sprachraum übliche Bezeichnung.
 - **Mengen:** Die Originalangabe bleibt exakt stehen. Ist sie nicht metrisch, hängst du

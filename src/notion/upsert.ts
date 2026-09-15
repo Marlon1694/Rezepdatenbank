@@ -99,6 +99,7 @@ export async function upsertRecipe(input: UpsertInput): Promise<UpsertResult> {
     sourceTitle: input.sourceTitle,
     transcript: input.transcript,
     transcriptSource: input.transcriptSource,
+    hasTimeProperty: Boolean(findProperty(schema.properties, "zeit", mapping)),
   });
 
   const batches = chunkBlocks(blocks);
