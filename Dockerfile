@@ -1,3 +1,23 @@
+# ── Stufe 1: Abhaengigkeiten ─────────────────────────────────────────────────
+# better-sqlite3 bringt eine binding.gyp mit, weshalb npm es aus dem Quelltext
+# uebersetzen will - auch wenn das Paket fertige Binaerdateien enthaelt. Dafuer
+# braucht es make und g++, die im schlanken Node-Image fehlen.
+#
+# Das passiert deshalb in einer eigenen Stufe: Die Werkzeugkette (~250 MB) bleibt
+# aussen vor, ins Laufzeit-Image wandert nur das fertige node_modules.
+FROM node:22-slim AS deps
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 \
+      build-essential \
+      ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+# ── Stufe 2: Laufzeit ────────────────────────────────────────────────────────
 FROM node:22-slim
 
 # ffmpeg   : Tonspur auf 16 kHz Mono umrechnen
@@ -22,17 +42,18 @@ RUN pip install --no-cache-dir \
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+# Fertig uebersetzte Module aus Stufe 1 - hier wird nichts mehr gebaut.
+COPY --from=deps /app/node_modules ./node_modules
 
+COPY package.json package-lock.json ./
 COPY tsconfig.json ./
 COPY src ./src
 COPY scripts ./scripts
 COPY prompts ./prompts
 
 # tsx laeuft zur Laufzeit - bei dieser Groessenordnung ist ein Build-Schritt
-# reiner Zusatzaufwand ohne Gegenwert.
-RUN npm install --no-save tsx
+# reiner Zusatzaufwand ohne Gegenwert. Es steckt deshalb in dependencies,
+# nicht in devDependencies.
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \

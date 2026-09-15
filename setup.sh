@@ -54,15 +54,25 @@ ok "Docker-Daemon erreichbar"
 command -v curl >/dev/null 2>&1 || die "curl fehlt:  apt install -y curl"
 
 # ── Bestehende .env ──────────────────────────────────────────────────────────
+# Bricht der Bau ab (fehlendes Paket, kein Speicher), sollen die bereits
+# geprueften Zugangsdaten nicht noch einmal eingetippt werden muessen.
+REUSE_ENV=false
+
 if [ -f .env ]; then
-  warn ".env existiert bereits."
-  read -r -p "  Neu anlegen? Bestehende Werte gehen verloren. [j/N] " answer
+  warn ".env existiert bereits - die Zugangsdaten sind also schon hinterlegt."
+  read -r -p "  Neu eingeben? [j/N] " answer
   case "$answer" in
     [jJyY]*) cp .env ".env.backup.$(date +%Y%m%d-%H%M%S)"
              ok "Sicherung angelegt: .env.backup.*" ;;
-    *) say ""; say "  Abgebrochen. Zum Starten:  docker compose up -d --build"; exit 0 ;;
+    *) REUSE_ENV=true
+       ok "Bestehende .env wird weiterverwendet - weiter beim Bauen." ;;
   esac
 fi
+
+if [ "$REUSE_ENV" = true ]; then
+  APP_TOKEN="$(grep -m1 '^APP_TOKEN=' .env | cut -d= -f2-)"
+  [ -n "$APP_TOKEN" ] || die "In der .env fehlt APP_TOKEN. Bitte setup.sh erneut mit 'j' starten."
+else
 
 # ── Zugangsdaten ─────────────────────────────────────────────────────────────
 step "Notion"
@@ -176,6 +186,8 @@ umask 022
 
 ok ".env angelegt (nur fuer dich lesbar)"
 ok "Zugriffs-Token automatisch erzeugt"
+
+fi   # Ende: Zugangsdaten abfragen
 
 # ── Bauen und starten ────────────────────────────────────────────────────────
 step "Container bauen und starten"
