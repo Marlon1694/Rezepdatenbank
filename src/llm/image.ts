@@ -56,25 +56,44 @@ async function viaImagen(model: string, prompt: string): Promise<GeneratedImage 
   return { data: Buffer.from(bytes, "base64"), mimeType: first.image?.mimeType ?? "image/png" };
 }
 
-/** Die Gemini-eigenen Bildmodelle antworten ueber generateContent. */
+/**
+ * Die Gemini-eigenen Bildmodelle antworten ueber generateContent.
+ *
+ * Bei den Modalitaeten sind sie unterschiedlich streng: manche wollen nur IMAGE,
+ * andere bestehen auf TEXT daneben. Statt das je Modell zu pflegen, werden beide
+ * Formen probiert - der Unterschied kostet einen Fehlversuch, eine falsche
+ * Voreinstellung dagegen jedes Titelbild.
+ */
 async function viaGemini(model: string, prompt: string): Promise<GeneratedImage | undefined> {
-  const res = await getGemini().models.generateContent({
-    model,
-    contents: prompt,
-    config: { responseModalities: ["IMAGE"] },
-  });
+  const variants: string[][] = [["IMAGE"], ["TEXT", "IMAGE"]];
+  let lastError: unknown;
 
-  const parts = res.candidates?.[0]?.content?.parts ?? [];
-  for (const part of parts) {
-    const inline = part.inlineData;
-    if (inline?.data) {
-      return {
-        data: Buffer.from(inline.data, "base64"),
-        mimeType: inline.mimeType ?? "image/png",
-      };
+  for (const responseModalities of variants) {
+    try {
+      const res = await getGemini().models.generateContent({
+        model,
+        contents: prompt,
+        config: { responseModalities },
+      });
+
+      // Antwortet das Modell mit Text und Bild, interessiert nur das Bild.
+      for (const part of res.candidates?.[0]?.content?.parts ?? []) {
+        const inline = part.inlineData;
+        if (inline?.data) {
+          return {
+            data: Buffer.from(inline.data, "base64"),
+            mimeType: inline.mimeType ?? "image/png",
+          };
+        }
+      }
+      // Antwort kam an, enthielt aber kein Bild - eine andere Modalitaet hilft da nicht.
+      return undefined;
+    } catch (err) {
+      lastError = err;
     }
   }
-  return undefined;
+
+  throw lastError;
 }
 
 export async function generateCoverImage(recipe: Recipe): Promise<GeneratedImage | undefined> {
