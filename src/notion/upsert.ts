@@ -80,10 +80,18 @@ export async function upsertRecipe(input: UpsertInput): Promise<UpsertResult> {
   const schema = await getDataSourceSchema();
   const mapping = input.mapping ?? {};
 
+  // Erst nachsehen, ob es die Seite schon gibt: davon haengt ab, ob der Status
+  // gesetzt wird. Sonst wuerfe ein erneuter Import ein auf "Perfektioniert"
+  // stehendes Rezept wieder auf "Ausprobieren" zurueck.
+  const existingId = input.dryRun
+    ? undefined
+    : await findExistingPage(input.sourceUrl, mapping);
+
   const { properties, skipped } = buildProperties(input.recipe, schema, {
     sourceUrl: input.sourceUrl,
     tagsWithHash: cfg.tagsWithHash,
     mapping,
+    newRecipeStatus: existingId ? undefined : cfg.newRecipeStatus,
   });
 
   const blocks = buildRecipeBlocks(input.recipe, {
@@ -110,7 +118,6 @@ export async function upsertRecipe(input: UpsertInput): Promise<UpsertResult> {
   }
 
   const notion = getNotion();
-  const existingId = await findExistingPage(input.sourceUrl, mapping);
 
   let pageId: string;
   let pageUrl: string | undefined;

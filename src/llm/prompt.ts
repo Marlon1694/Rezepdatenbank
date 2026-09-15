@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { getConfig } from "../config.ts";
+import type { ExtraField } from "../notion/mapper.ts";
 
 export interface PromptContext {
   input: string;
@@ -9,13 +10,24 @@ export interface PromptContext {
   platform?: string;
   /** Tag-Optionen, die es in der Notion-DB schon gibt. */
   knownTags?: string[];
+  /** Vorhandene Zutaten-Optionen - damit keine Synonyme entstehen. */
+  knownIngredients?: string[];
   /** Zusatzfelder, fuer die es in der DB auch wirklich eine Spalte gibt. */
-  extraFields?: Array<"portionen" | "kueche">;
+  extraFields?: ExtraField[];
 }
 
-const EXTRA_TEXT: Record<"portionen" | "kueche", string> = {
+const EXTRA_TEXT: Record<ExtraField, string> = {
   portionen: "- `portionen`: Für wie viele Personen bzw. welche Menge das Rezept gedacht ist.",
   kueche: "- `kueche`: Länderküche oder Region (z.B. Italienisch, Thai, Fränkisch).",
+  schwierigkeit:
+    "- `schwierigkeit`: Genau eines von **Leicht**, **Mittel**, **Schwer**. " +
+    "Richte dich nach Technik und Timing, nicht nach der Kochdauer: ein Schmorgericht, " +
+    "das drei Stunden vor sich hin köchelt, ist *Leicht*.",
+  zutatenliste:
+    "- `zutaten_namen`: Die kennzeichnenden Zutaten als bloße Namen — ohne Mengen, ohne " +
+    "Zubereitungshinweise, im Singular (`Hähnchenbrust`, nicht `2 gewürfelte Hähnchenbrüste`). " +
+    "Grundausstattung wie Salz, Pfeffer, Wasser oder Öl weglassen: sie steckt in jedem Rezept " +
+    "und taugt deshalb nicht zum Filtern. Höchstens 12.",
 };
 
 /**
@@ -35,14 +47,25 @@ export async function buildPrompt(ctx: PromptContext): Promise<string> {
     ? ctx.knownTags.join(", ")
     : "(noch keine vorhanden - vergib passende neue)";
 
-  const extras = ctx.extraFields?.length
+  const extraLines = ctx.extraFields?.map((f) => EXTRA_TEXT[f]) ?? [];
+
+  // Bereits vergebene Zutatennamen anbieten, damit nicht "Sahne" und "Schlagsahne"
+  // als zwei Optionen nebeneinander entstehen.
+  if (ctx.extraFields?.includes("zutatenliste") && ctx.knownIngredients?.length) {
+    extraLines.push(
+      `  Bevorzuge diese bereits vorhandenen Bezeichnungen, wo sie passen: ` +
+        `${ctx.knownIngredients.join(", ")}`,
+    );
+  }
+
+  const extras = extraLines.length
     ? [
         "## Zusatzfelder",
         "",
         "Diese Datenbank hat zusätzlich folgende Spalten. Befülle sie, wenn das Material",
         "die Information hergibt, sonst lass sie weg:",
         "",
-        ...ctx.extraFields.map((f) => EXTRA_TEXT[f]),
+        ...extraLines,
       ].join("\n")
     : "";
 

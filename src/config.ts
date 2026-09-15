@@ -47,6 +47,8 @@ const ConfigSchema = z.object({
 
   freeTextMinChars: z.coerce.number().int().nonnegative().default(400),
   tagsWithHash: bool.default(false),
+  /** Wert fuer die Status-Spalte bei NEU angelegten Rezepten. Leer = nicht setzen. */
+  newRecipeStatus: z.string().default(""),
   ytdlpAutoUpdate: bool.default(true),
   cookiesFile: z.string().default("config/cookies.txt"),
 
@@ -75,6 +77,7 @@ export function getConfig(): Config {
     whisperComputeType: process.env.WHISPER_COMPUTE_TYPE,
     freeTextMinChars: process.env.FREE_TEXT_MIN_CHARS,
     tagsWithHash: process.env.TAGS_WITH_HASH,
+    newRecipeStatus: process.env.NEW_RECIPE_STATUS,
     ytdlpAutoUpdate: process.env.YTDLP_AUTO_UPDATE,
     cookiesFile: process.env.COOKIES_FILE,
   });

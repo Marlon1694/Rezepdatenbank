@@ -35,6 +35,13 @@ export const RecipeSchema = z.object({
   /** Optional, nur befuellt wenn die Notion-DB passende Spalten hat. */
   portionen: optionalText,
   kueche: optionalText,
+  schwierigkeit: optionalText,
+  /**
+   * Grundzutaten ohne Mengen fuer eine multi_select-Spalte - damit laesst sich in
+   * Notion nach "was kann ich mit Haehnchen kochen" filtern. Bewusst getrennt von
+   * `zutaten`: dort stehen die Mengen, hier nur die Namen.
+   */
+  zutaten_namen: z.array(z.string().min(1)).default([]),
 });
 
 export type Recipe = z.infer<typeof RecipeSchema>;
@@ -98,6 +105,18 @@ export const GEMINI_RESPONSE_SCHEMA = {
     pro_tipp: { type: "string", description: "Leer lassen, wenn im Material keiner vorkommt" },
     portionen: { type: "string" },
     kueche: { type: "string" },
+    schwierigkeit: {
+      type: "string",
+      description: "Genau eines von: Leicht, Mittel, Schwer",
+    },
+    zutaten_namen: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        "Die kennzeichnenden Zutaten als blosse Namen, ohne Mengen und ohne " +
+        "Zubereitungshinweise, im Singular. Grundausstattung wie Salz, Pfeffer, " +
+        "Wasser oder Oel weglassen. Hoechstens 12.",
+    },
   },
   required: ["emoji", "titel", "tags", "zeit_text", "zutaten", "schritte"],
 } as const;

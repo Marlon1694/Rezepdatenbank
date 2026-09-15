@@ -44,6 +44,8 @@ const recipe: Recipe = {
   pro_tipp: "Nudelwasser aufheben.",
   portionen: "2",
   kueche: "italienisch",
+  schwierigkeit: "leicht",
+  zutaten_namen: ["Pasta", "champignons"],
 };
 
 describe("normalizeKey", () => {

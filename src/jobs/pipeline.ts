@@ -1,7 +1,7 @@
 import { extract, detectPlatform, type ProgressFn } from "../extract/index.ts";
 import { extractRecipe } from "../llm/index.ts";
 import { getDataSourceSchema } from "../notion/client.ts";
-import { availableExtraFields, knownTags } from "../notion/mapper.ts";
+import { availableExtraFields, knownTags, knownOptions } from "../notion/mapper.ts";
 import { upsertRecipe, type UpsertResult } from "../notion/upsert.ts";
 import { loadMapping } from "./mapping.ts";
 import type { Recipe } from "../llm/recipeSchema.ts";
@@ -40,6 +40,7 @@ export async function runPipeline(
     uploader: extracted.uploader,
     platform,
     knownTags: knownTags(schema, mapping),
+    knownIngredients: knownOptions(schema, "zutatenliste", mapping),
     extraFields: availableExtraFields(schema, mapping),
   });
 

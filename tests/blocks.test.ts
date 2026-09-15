@@ -22,6 +22,8 @@ const base: Recipe = {
   pro_tipp: "Nudelwasser aufheben.",
   portionen: null,
   kueche: null,
+  schwierigkeit: "Leicht",
+  zutaten_namen: ["Pasta", "Sahne"],
 };
 
 const opts = { sourceUrl: "https://youtu.be/abc", sourceTitle: "Beste Pasta" };

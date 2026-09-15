@@ -14,7 +14,10 @@ export type CanonicalField =
   | "quelle"
   | "portionen"
   | "kueche"
-  | "datum";
+  | "datum"
+  | "schwierigkeit"
+  | "zutatenliste"
+  | "status";
 
 export type Mapping = Partial<Record<CanonicalField, string | null>>;
 
@@ -38,6 +41,9 @@ const AUTO_NAMES: Record<Exclude<CanonicalField, "titel">, string[]> = {
   portionen: ["portionen", "portion", "servings", "personen", "ergibt", "yield"],
   kueche: ["küche", "kueche", "cuisine", "land", "herkunft", "region"],
   datum: ["hinzugefügt", "hinzugefuegt", "erstellt", "datum", "date", "added", "erfasst"],
+  schwierigkeit: ["schwierigkeitsgrad", "schwierigkeit", "aufwand", "difficulty", "level"],
+  zutatenliste: ["zutaten", "ingredients", "zutatenliste"],
+  status: ["status", "zustand", "fortschritt"],
 };
 
 /** Kleinschreibung, ohne '#', ohne Mehrfach-Leerzeichen. Basis fuer jeden Vergleich. */
@@ -173,6 +179,12 @@ export interface BuildOptions {
   sourceUrl: string;
   tagsWithHash: boolean;
   mapping?: Mapping;
+  /**
+   * Fester Wert fuer die Status-Spalte bei neu erfassten Rezepten. Kommt aus der
+   * Konfiguration, nicht vom Modell - ein Arbeitsstand ist nichts, was sich aus
+   * einem Video ablesen liesse.
+   */
+  newRecipeStatus?: string;
   /** Ueberschreibbar fuer deterministische Tests. */
   now?: Date;
 }
@@ -239,6 +251,20 @@ export function buildProperties(
   assign("quelle", opts.sourceUrl);
   assign("portionen", recipe.portionen);
   assign("kueche", recipe.kueche);
+  assign("schwierigkeit", recipe.schwierigkeit);
+
+  // Grundzutaten ohne Mengen - wie bei den Tags gegen den Bestand abgeglichen,
+  // sonst stehen "Sahne" und "sahne" bald als zwei Optionen nebeneinander.
+  const zutatenProp = findProperty(props, "zutatenliste", mapping);
+  if (zutatenProp && recipe.zutaten_namen.length) {
+    const namen = formatTags(recipe.zutaten_namen, zutatenProp.options, false);
+    const built = toPropertyValue(zutatenProp, namen);
+    if (built) properties[zutatenProp.name] = built;
+  }
+
+  if (opts.newRecipeStatus) {
+    assign("status", opts.newRecipeStatus);
+  }
 
   const datumProp = findProperty(props, "datum", mapping);
   if (datumProp && (datumProp.type === "date" || datumProp.type === "rich_text")) {
@@ -250,6 +276,11 @@ export function buildProperties(
   return { properties, skipped };
 }
 
+/** Zusatzfelder, die das Modell befuellen kann - sofern es dafuer eine Spalte gibt. */
+export type ExtraField = "portionen" | "kueche" | "schwierigkeit" | "zutatenliste";
+
+const EXTRA_FIELDS: ExtraField[] = ["portionen", "kueche", "schwierigkeit", "zutatenliste"];
+
 /**
  * Welche Zusatzfelder soll das Modell ueberhaupt befuellen? Nur die, fuer die es auch
  * eine Spalte gibt - sonst erfindet es Portionsangaben, die nirgends landen.
@@ -257,11 +288,20 @@ export function buildProperties(
 export function availableExtraFields(
   schema: DataSourceSchema,
   mapping: Mapping = {},
-): Array<"portionen" | "kueche"> {
-  const out: Array<"portionen" | "kueche"> = [];
-  if (findProperty(schema.properties, "portionen", mapping)) out.push("portionen");
-  if (findProperty(schema.properties, "kueche", mapping)) out.push("kueche");
-  return out;
+): ExtraField[] {
+  return EXTRA_FIELDS.filter((f) => findProperty(schema.properties, f, mapping));
+}
+
+/**
+ * Bestehende Optionen einer Spalte - wandern als Hinweis in den Prompt, damit das
+ * Modell vorhandene Werte wiederverwendet statt Synonyme zu erfinden.
+ */
+export function knownOptions(
+  schema: DataSourceSchema,
+  field: CanonicalField,
+  mapping: Mapping = {},
+): string[] {
+  return findProperty(schema.properties, field, mapping)?.options ?? [];
 }
 
 /** Alle bekannten Tag-Optionen der DB - wandern als Hinweis in den Prompt. */
