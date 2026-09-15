@@ -16,6 +16,8 @@ export interface JsonLdRecipe {
   cuisine?: string;
   keywords: string[];
   author?: string;
+  /** Erstes Bild aus dem Datensatz - taugt als Notion-Titelbild. */
+  image?: string;
 }
 
 /** Alle <script type="application/ld+json">-Bloecke, tolerant gegen kaputtes JSON. */
@@ -110,6 +112,25 @@ function asString(value: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * schema.org erlaubt fuer "image" so ziemlich alles: eine Zeichenkette, ein
+ * Array, ein ImageObject mit url oder contentUrl - oder eine Mischung davon.
+ */
+function firstImage(value: unknown): string | undefined {
+  const candidates = Array.isArray(value) ? value : [value];
+  for (const item of candidates) {
+    if (typeof item === "string" && /^https?:\/\//.test(item)) return item;
+    if (item && typeof item === "object") {
+      const o = item as Record<string, unknown>;
+      for (const key of ["url", "contentUrl"]) {
+        const v = o[key];
+        if (typeof v === "string" && /^https?:\/\//.test(v)) return v;
+      }
+    }
+  }
+  return undefined;
+}
+
 export function findRecipe(html: string): JsonLdRecipe | undefined {
   for (const block of extractJsonLdBlocks(html)) {
     for (const node of walk(block)) {
@@ -131,6 +152,7 @@ export function findRecipe(html: string): JsonLdRecipe | undefined {
           k.includes(",") ? k.split(",").map((s) => s.trim()).filter(Boolean) : [k],
         ),
         author: asString(node.author),
+        image: firstImage(node.image),
       };
     }
   }

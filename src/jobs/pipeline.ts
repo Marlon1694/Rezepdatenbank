@@ -64,6 +64,7 @@ export async function runPipeline(
   const upsert = await upsertRecipe({
     recipe,
     sourceUrl: notionUrl,
+    thumbnailUrl: extracted.thumbnailUrl,
     sourceTitle: extracted.title,
     transcript: extracted.text,
     transcriptSource: extracted.source,

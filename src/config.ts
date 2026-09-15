@@ -48,9 +48,15 @@ const ConfigSchema = z.object({
   /** Eigenes Modell fuer Audio, falls TRANSCRIBE_PROVIDER=gemini. */
   geminiTranscribeModel: z.string().default("gemini-3.5-transcribe"),
 
-  /** Titelbild zum Rezept erzeugen lassen? */
-  coverImage: bool.default(false),
-  /** Bildmodell. Leer = kein Titelbild. "npm run models" zeigt die Namen. */
+  /**
+   * Woher das Notion-Titelbild kommt:
+   *   thumbnail    = Vorschaubild des Videos bzw. Bild der Seite (kostenlos)
+   *   ai           = erzeugtes Bild (kostenpflichtig, siehe README)
+   *   thumbnail+ai = Vorschaubild, sonst erzeugtes
+   *   none         = keines
+   */
+  coverSource: z.enum(["thumbnail", "ai", "thumbnail+ai", "none"]).default("thumbnail"),
+  /** Bildmodell fuer den ai-Weg. "npm run models" zeigt die Namen. */
   imageModel: z.string().default(""),
   coverPromptFile: z.string().default("prompts/cover.de.md"),
 
@@ -93,7 +99,7 @@ export function getConfig(): Config {
     geminiModel: process.env.GEMINI_MODEL,
     geminiFallbackModel: process.env.GEMINI_FALLBACK_MODEL,
     geminiTranscribeModel: process.env.GEMINI_TRANSCRIBE_MODEL,
-    coverImage: process.env.COVER_IMAGE,
+    coverSource: process.env.COVER_SOURCE,
     imageModel: process.env.IMAGE_MODEL,
     transcribeProvider: process.env.TRANSCRIBE_PROVIDER,
     whisperModel: process.env.WHISPER_MODEL,

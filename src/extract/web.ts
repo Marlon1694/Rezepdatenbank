@@ -6,6 +6,8 @@ export interface WebPage {
   title?: string;
   /** Aus <link rel="canonical"> - Blogs haengen gern Kampagnen-Parameter an. */
   canonicalUrl?: string;
+  /** Bild der Seite, fuer das Notion-Titelbild. */
+  thumbnailUrl?: string;
   text: string;
   /** Gesetzt, wenn die Seite ein schema.org/Recipe mitliefert. */
   jsonLd?: JsonLdRecipe;
@@ -56,11 +58,31 @@ export function findCanonicalUrl(html: string): string | undefined {
   }
 }
 
+/** og:image - was Blogs beim Teilen in sozialen Netzen anzeigen. */
+export function findOgImage(html: string): string | undefined {
+  const re = /<meta[^>]+(?:property|name)=["']og:image(?::url)?["'][^>]*>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const content = /content=["']([^"']+)["']/i.exec(m[0])?.[1]?.trim();
+    if (content && /^https?:\/\//.test(content)) return content;
+  }
+  return undefined;
+}
+
 export function parsePage(html: string, url: string): WebPage {
   const canonicalUrl = findCanonicalUrl(html);
+  // Das Bild aus dem Rezept-Datensatz zeigt das Gericht; og:image ist oft nur
+  // das Logo des Blogs - deshalb in dieser Reihenfolge.
+  const ogImage = findOgImage(html);
   const jsonLd = findRecipe(html);
   if (jsonLd) {
-    return { title: jsonLd.name, text: recipeToText(jsonLd), jsonLd, canonicalUrl };
+    return {
+      title: jsonLd.name,
+      text: recipeToText(jsonLd),
+      jsonLd,
+      canonicalUrl,
+      thumbnailUrl: jsonLd.image ?? ogImage,
+    };
   }
 
   const { document } = parseHTML(html);
@@ -69,11 +91,13 @@ export function parsePage(html: string, url: string): WebPage {
   try {
     const article = new Readability(document as never).parse();
     const text = article?.textContent?.replace(/\s+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-    if (text) return { title: article?.title?.trim() || title, text, canonicalUrl };
+    if (text) {
+      return { title: article?.title?.trim() || title, text, canonicalUrl, thumbnailUrl: ogImage };
+    }
   } catch {
     // Readability scheitert an manchen Seiten - dann eben der rohe Body.
   }
 
   const body = document.querySelector("body")?.textContent ?? "";
-  return { title, text: body.replace(/\s+/g, " ").trim(), canonicalUrl };
+  return { title, text: body.replace(/\s+/g, " ").trim(), canonicalUrl, thumbnailUrl: ogImage };
 }

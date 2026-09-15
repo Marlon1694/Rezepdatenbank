@@ -168,3 +168,61 @@ describe("findCanonicalUrl", () => {
     expect(findCanonicalUrl("<title>Ohne</title>")).toBeUndefined();
   });
 });
+
+describe("Bild für das Titelbild", () => {
+  it("liest das Bild aus dem Rezept-Datensatz", () => {
+    const mit = { ...RECIPE_JSON, image: "https://blog.de/pasta.jpg" };
+    expect(findRecipe(page(mit))?.image).toBe("https://blog.de/pasta.jpg");
+  });
+
+  it("kommt mit den verschiedenen schema.org-Formen zurecht", () => {
+    // Mal Zeichenkette, mal Array, mal ImageObject - alles erlaubt.
+    const alsArray = { ...RECIPE_JSON, image: ["https://blog.de/a.jpg", "https://blog.de/b.jpg"] };
+    expect(findRecipe(page(alsArray))?.image).toBe("https://blog.de/a.jpg");
+
+    const alsObjekt = {
+      ...RECIPE_JSON,
+      image: { "@type": "ImageObject", url: "https://blog.de/c.jpg" },
+    };
+    expect(findRecipe(page(alsObjekt))?.image).toBe("https://blog.de/c.jpg");
+
+    const mitContentUrl = {
+      ...RECIPE_JSON,
+      image: [{ "@type": "ImageObject", contentUrl: "https://blog.de/d.jpg" }],
+    };
+    expect(findRecipe(page(mitContentUrl))?.image).toBe("https://blog.de/d.jpg");
+  });
+
+  it("verwirft relative Bildangaben", () => {
+    const relativ = { ...RECIPE_JSON, image: "/bilder/pasta.jpg" };
+    expect(findRecipe(page(relativ))?.image).toBeUndefined();
+  });
+
+  it("zieht das Rezeptbild dem og:image vor", async () => {
+    // og:image ist bei Blogs oft nur das Seitenlogo, nicht das Gericht.
+    const { parsePage } = await import("../src/extract/web.ts");
+    const html =
+      `<meta property="og:image" content="https://blog.de/logo.png">` +
+      page({ ...RECIPE_JSON, image: "https://blog.de/pasta.jpg" });
+    expect(parsePage(html, "https://blog.de/x").thumbnailUrl).toBe("https://blog.de/pasta.jpg");
+  });
+
+  it("nimmt og:image, wenn der Rezept-Datensatz kein Bild hat", async () => {
+    const { parsePage } = await import("../src/extract/web.ts");
+    const html =
+      `<meta property="og:image" content="https://blog.de/bild.jpg">` + page(RECIPE_JSON);
+    expect(parsePage(html, "https://blog.de/x").thumbnailUrl).toBe("https://blog.de/bild.jpg");
+  });
+
+  it("findet og:image auch als name-Attribut", async () => {
+    const { findOgImage } = await import("../src/extract/web.ts");
+    expect(findOgImage(`<meta name="og:image" content="https://x.de/a.jpg">`)).toBe(
+      "https://x.de/a.jpg",
+    );
+  });
+
+  it("verwirft ein relatives og:image", async () => {
+    const { findOgImage } = await import("../src/extract/web.ts");
+    expect(findOgImage(`<meta property="og:image" content="/a.jpg">`)).toBeUndefined();
+  });
+});

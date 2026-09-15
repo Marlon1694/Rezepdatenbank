@@ -80,7 +80,7 @@ export async function buildApp() {
     // dort mit einer Meldung, die nach einem kaputten Extraktor aussieht.
     impersonation: await ytdlp.hasImpersonation(),
     transcribeProvider: cfg.transcribeProvider,
-    coverImage: coverImageBlocker() || `aktiv (${cfg.imageModel})`,
+    coverSource: cfg.coverSource,
   }));
 
   /** Prueft die Notion-Verbindung und zeigt das erkannte Schema. */
@@ -233,9 +233,10 @@ async function main(): Promise<void> {
     void ytdlp.selfUpdate();
   }
 
-  const blocker = coverImageBlocker();
   app.log.info(
-    blocker ? `Titelbild: aus (${blocker})` : `Titelbild: ${cfg.imageModel}`,
+    cfg.coverSource === "ai" || cfg.coverSource === "thumbnail+ai"
+      ? `Titelbild: ${cfg.coverSource} (${coverImageBlocker() || cfg.imageModel})`
+      : `Titelbild: ${cfg.coverSource}`,
   );
 
   startWorker();

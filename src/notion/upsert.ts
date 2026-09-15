@@ -4,11 +4,13 @@ import { buildRecipeBlocks, chunkBlocks } from "./blocks.ts";
 import type { Recipe } from "../llm/recipeSchema.ts";
 import { getConfig } from "../config.ts";
 import { generateCoverImage } from "../llm/image.ts";
-import { uploadCover } from "./cover.ts";
+import { uploadCover, fetchThumbnail } from "./cover.ts";
 
 export interface UpsertInput {
   recipe: Recipe;
   sourceUrl: string;
+  /** Vorschaubild der Quelle - bevorzugte Herkunft des Titelbildes. */
+  thumbnailUrl?: string;
   sourceTitle?: string;
   transcript?: string;
   transcriptSource?: string;
@@ -104,11 +106,26 @@ export async function upsertRecipe(input: UpsertInput): Promise<UpsertResult> {
     hasTimeProperty: Boolean(findProperty(schema.properties, "zeit", mapping)),
   });
 
-  // Titelbild: laeuft parallel zum Rest und darf scheitern, ohne das Rezept
-  // mitzureissen.
+  // Titelbild: darf in jeder Stufe scheitern, ohne das Rezept mitzureissen.
+  //
+  // Das Vorschaubild geht vor: Es zeigt das Gericht aus genau diesem Rezept,
+  // kostet nichts und ist ohnehin schon zur Hand. Ein erzeugtes Bild zeigt
+  // dagegen ein plausibles, aber erfundenes Gericht - und die freie
+  // Gemini-Stufe sieht dafuer kein Kontingent vor.
   let coverId: string | undefined;
-  if (!input.dryRun) {
-    const image = await generateCoverImage(input.recipe);
+  if (!input.dryRun && cfg.coverSource !== "none") {
+    let image;
+
+    if (cfg.coverSource.startsWith("thumbnail") && input.thumbnailUrl) {
+      image = await fetchThumbnail(input.thumbnailUrl);
+    }
+    if (!image && cfg.coverSource.includes("ai")) {
+      image = await generateCoverImage(input.recipe);
+    }
+    if (!image && cfg.coverSource === "thumbnail" && !input.thumbnailUrl) {
+      console.log("[titelbild] die Quelle liefert kein Vorschaubild.");
+    }
+
     if (image) coverId = await uploadCover(image);
   }
   const cover = coverId

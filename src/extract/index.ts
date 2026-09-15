@@ -29,6 +29,8 @@ export interface ExtractResult {
    * sonst zwei verschiedene Rezepte.
    */
   canonicalUrl?: string;
+  /** Vorschaubild des Videos bzw. Bild der Seite - wird Notion-Titelbild. */
+  thumbnailUrl?: string;
   title?: string;
   uploader?: string;
   durationSeconds?: number;
@@ -76,6 +78,7 @@ export async function extract(url: string, onProgress: ProgressFn = () => {}): P
         text: page.text,
         source: "Rezept-Metadaten der Seite",
         canonicalUrl: page.canonicalUrl,
+        thumbnailUrl: page.thumbnailUrl,
         title: page.title,
         hintMinutes: isoDurationToMinutes(page.jsonLd.totalTime),
         transcribed: false,
@@ -90,6 +93,7 @@ export async function extract(url: string, onProgress: ProgressFn = () => {}): P
       text: page.text,
       source: "Seitentext",
       canonicalUrl: page.canonicalUrl,
+      thumbnailUrl: page.thumbnailUrl,
       title: page.title,
       transcribed: false,
     };
@@ -124,6 +128,7 @@ export async function extract(url: string, onProgress: ProgressFn = () => {}): P
         text: combined,
         source: c.source,
         canonicalUrl: info.webpageUrl,
+        thumbnailUrl: info.thumbnail,
         title: info.title,
         uploader: info.uploader,
         durationSeconds: info.durationSeconds,
@@ -159,6 +164,7 @@ export async function extract(url: string, onProgress: ProgressFn = () => {}): P
         ? "Transkription (Gemini)"
         : "Transkription (lokal)",
       canonicalUrl: info.webpageUrl,
+      thumbnailUrl: info.thumbnail,
       title: info.title,
       uploader: info.uploader,
       durationSeconds: info.durationSeconds,

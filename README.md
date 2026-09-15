@@ -131,26 +131,31 @@ löst yt-dlp beim Abruf auf — in Notion landet dann die vollständige Adresse.
 
 ## Titelbild
 
-Mit `COVER_IMAGE=true` und einem `IMAGE_MODEL` wird zu jedem Rezept ein Bild
-erzeugt und als Notion-Titelbild gesetzt. Der Bild-Prompt liegt in
-[`prompts/cover.de.md`](prompts/cover.de.md) und ist wie der Rezept-Prompt frei
-editierbar.
+Gesteuert über `COVER_SOURCE`:
 
-Das Bild wird zu Notion **hochgeladen**, nicht verlinkt — es bleibt also erhalten,
-unabhängig von diesem Server.
+| Wert | Woher das Bild kommt |
+|---|---|
+| **`thumbnail`** *(Standard)* | Vorschaubild des Videos, bei Blogs das Bild aus `schema.org/Recipe`, sonst `og:image`. Kostenlos, zeigt das Gericht aus genau diesem Rezept. |
+| `ai` | Erzeugtes Bild nach [`prompts/cover.de.md`](prompts/cover.de.md). **Kostenpflichtig** — siehe unten. |
+| `thumbnail+ai` | Vorschaubild, und nur wenn keines vorhanden ist, ein erzeugtes. |
+| `none` | Kein Titelbild. |
 
-> Das Bild zeigt nicht das Gericht aus dem Video, sondern eine Darstellung auf Basis
-> von Titel und Zutaten. Beim erneuten Erfassen desselben Links wird ein vorhandenes
-> Titelbild nur überschrieben, wenn tatsächlich ein neues entstanden ist — ein selbst
-> gesetztes bleibt sonst bestehen.
+Das Bild wird zu Notion **hochgeladen**, nicht verlinkt. CDN-Adressen von TikTok und
+Instagram sind signiert und laufen ab — als hochgeladene Datei gehört es dauerhaft
+zur Seite.
 
-Schlägt die Erzeugung fehl (Kontingent, Inhaltsfilter, Modell nicht verfügbar),
-landet das Rezept trotzdem in Notion, nur ohne Bild.
+Bei einem erneuten Erfassen desselben Links wird ein vorhandenes Titelbild nur
+überschrieben, wenn tatsächlich ein neues entstanden ist. Ein selbst gesetztes
+bleibt also bestehen.
 
-> **Bildgenerierung ist nicht kostenlos.** Die freie Gemini-Stufe sieht für
-> Bildmodelle kein Kontingent vor — die API antwortet mit `429` und `limit: 0`.
-> Das ist kein aufgebrauchtes Kontingent, sondern gar keines. Dafür muss in der
-> Google-Cloud-Konsole die Abrechnung aktiviert sein; gerechnet wird pro Bild.
+Schlägt etwas fehl — kein Vorschaubild, Abruf klemmt, Upload scheitert — landet das
+Rezept trotzdem in Notion, nur ohne Bild.
+
+> **Zu `ai`:** Die freie Gemini-Stufe sieht für Bildmodelle kein Kontingent vor. Die
+> API antwortet mit `429` und `limit: 0` — das ist kein aufgebrauchtes Kontingent,
+> sondern gar keines. Dafür muss in der Google-Cloud-Konsole die Abrechnung aktiv
+> sein. Abgesehen davon zeigt ein erzeugtes Bild ein plausibles, aber erfundenes
+> Gericht; für ein Rezeptbuch ist das Vorschaubild der Quelle meist die bessere Wahl.
 
 ## Der Prompt gehört dir
 
@@ -227,8 +232,8 @@ Alles über die `.env`, Vorlage in [`.env.example`](.env.example). Die wichtigst
 | `GEMINI_MODEL` | `gemini-3.5-flash` | Modell für die Rezept-Extraktion |
 | `GEMINI_FALLBACK_MODEL` | `gemini-2.5-flash` | Ausweichmodell bei Überlastung |
 | `GEMINI_TRANSCRIBE_MODEL` | `gemini-3.5-transcribe` | nur bei `TRANSCRIBE_PROVIDER=gemini` |
-| `COVER_IMAGE` | `false` | Titelbild zum Rezept erzeugen lassen |
-| `IMAGE_MODEL` | — | Bildmodell dafür (`npm run models` zeigt die Namen) |
+| `COVER_SOURCE` | `thumbnail` | `thumbnail`, `ai`, `thumbnail+ai` oder `none` |
+| `IMAGE_MODEL` | — | Bildmodell für `ai` (`npm run models` zeigt die Namen) |
 | `YTDLP_AUTO_UPDATE` | `true` | yt-dlp beim Start aktualisieren |
 | `YTDLP_CHANNEL` | `nightly` | `nightly` oder `stable` — siehe unten |
 
