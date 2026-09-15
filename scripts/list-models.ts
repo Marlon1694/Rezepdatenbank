@@ -44,21 +44,22 @@ async function main(): Promise<void> {
 
   console.log(`\n  Aktuell eingestellt: ${cfg.geminiModel}`);
   if (cfg.geminiFallbackModel) console.log(`  Ausweichmodell     : ${cfg.geminiFallbackModel}`);
+  console.log(`  Für Audio          : ${cfg.geminiTranscribeModel}`);
 
-  console.log(`\n  Stabile Modelle (empfohlen fuer GEMINI_MODEL)`);
+  console.log(`\n  Stabile Modelle (empfohlen für GEMINI_MODEL)`);
   console.log("  " + "-".repeat(60));
   for (const n of stable) console.log(`  ${n}`);
 
   if (rest.length) {
-    console.log(`\n  Experimentell / Vorschau / "-latest"`);
+    console.log(`\n  Experimentell / Vorschau / „-latest“`);
     console.log("  " + "-".repeat(60));
-    console.log("  (engere Limits, Verfuegbarkeit nicht zugesichert)");
+    console.log("  (engere Limits, Verfügbarkeit nicht zugesichert)");
     for (const n of rest) console.log(`  ${n}`);
   }
 
   console.log(
-    `\n  Ein Modell uebernehmen: in der .env GEMINI_MODEL setzen, optional` +
-      `\n  zusaetzlich GEMINI_FALLBACK_MODEL fuer den Fall der Ueberlastung.` +
+    `\n  Ein Modell übernehmen: in der .env GEMINI_MODEL setzen, optional` +
+      `\n  zusätzlich GEMINI_FALLBACK_MODEL für den Fall der Überlastung.` +
       `\n  Danach:  docker compose up -d\n`,
   );
 }

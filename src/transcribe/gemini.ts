@@ -18,8 +18,10 @@ export async function transcribeGemini(audioPath: string): Promise<TranscriptRes
   }
 
   const audio = await readFile(audioPath);
+  // Bewusst nicht cfg.geminiModel: fuer Audio gibt es ein eigenes Modell, und ein
+  // Textmodell waere hier die schlechtere Wahl.
   const response = await getGemini().models.generateContent({
-    model: cfg.geminiModel,
+    model: cfg.geminiTranscribeModel,
     contents: [
       {
         role: "user",

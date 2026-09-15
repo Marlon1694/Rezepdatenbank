@@ -158,8 +158,9 @@ Alles über die `.env`, Vorlage in [`.env.example`](.env.example). Die wichtigst
 | `FREE_TEXT_MIN_CHARS` | `400` | ab wann vorhandener Text als ausreichend gilt |
 | `TAGS_WITH_HASH` | `false` | Tags mit führendem `#` speichern |
 | `NEW_RECIPE_STATUS` | — | Status für neu erfasste Rezepte (nur beim Anlegen) |
-| `GEMINI_MODEL` | `gemini-flash-latest` | Modell für die Rezept-Extraktion |
-| `GEMINI_FALLBACK_MODEL` | — | Ausweichmodell bei Überlastung (`npm run models` zeigt die Namen) |
+| `GEMINI_MODEL` | `gemini-3.5-flash` | Modell für die Rezept-Extraktion |
+| `GEMINI_FALLBACK_MODEL` | `gemini-2.5-flash` | Ausweichmodell bei Überlastung |
+| `GEMINI_TRANSCRIBE_MODEL` | `gemini-3.5-transcribe` | nur bei `TRANSCRIBE_PROVIDER=gemini` |
 | `YTDLP_AUTO_UPDATE` | `true` | yt-dlp beim Start aktualisieren |
 
 ## Entwicklung

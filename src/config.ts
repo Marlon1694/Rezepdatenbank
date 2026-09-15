@@ -39,9 +39,14 @@ const ConfigSchema = z.object({
   notionDatabaseId: z.string().min(1, "NOTION_DATABASE_ID fehlt - siehe docs/notion.md"),
 
   geminiApiKey: z.string().default(""),
-  geminiModel: z.string().default("gemini-flash-latest"),
+  // Feste Versionen statt "-latest": Letztere zeigen laut Google auf
+  // experimentelle Modelle mit engeren Limits und ohne zugesicherte
+  // Verfuegbarkeit - genau das fuehrt zu sporadischen 503ern.
+  geminiModel: z.string().default("gemini-3.5-flash"),
   /** Wird angelaufen, wenn das Hauptmodell ueberlastet bleibt. Leer = keines. */
-  geminiFallbackModel: z.string().default(""),
+  geminiFallbackModel: z.string().default("gemini-2.5-flash"),
+  /** Eigenes Modell fuer Audio, falls TRANSCRIBE_PROVIDER=gemini. */
+  geminiTranscribeModel: z.string().default("gemini-3.5-transcribe"),
 
   transcribeProvider: z.enum(["local", "gemini"]).default("local"),
   whisperModel: z.string().default("small"),
@@ -75,6 +80,7 @@ export function getConfig(): Config {
     geminiApiKey: process.env.GEMINI_API_KEY,
     geminiModel: process.env.GEMINI_MODEL,
     geminiFallbackModel: process.env.GEMINI_FALLBACK_MODEL,
+    geminiTranscribeModel: process.env.GEMINI_TRANSCRIBE_MODEL,
     transcribeProvider: process.env.TRANSCRIBE_PROVIDER,
     whisperModel: process.env.WHISPER_MODEL,
     whisperComputeType: process.env.WHISPER_COMPUTE_TYPE,
