@@ -107,6 +107,28 @@ Details: [`docs/notion.md`](docs/notion.md)
 | HTTPS über Tailscale *(optional)* | [`docs/tailscale.md`](docs/tailscale.md) |
 | Instagram-Cookies hinterlegen | [`docs/cookies.md`](docs/cookies.md) |
 
+## Denselben Link zweimal erfassen
+
+Passiert nichts Schlimmes: Vor dem Anlegen wird nach einer Seite mit derselben
+Quell-URL gesucht. Gibt es sie, wird sie **aktualisiert** statt eine zweite
+anzulegen — Eigenschaften und Seiteninhalt werden neu geschrieben.
+
+Nicht angetastet werden dabei:
+
+- **Status** — wird nur beim Anlegen gesetzt. Ein auf *Perfektioniert* stehendes
+  Rezept fällt durch einen erneuten Import nicht auf Anfang zurück.
+- **Bewertung** — wird grundsätzlich nie geschrieben.
+- **Titelbild** — nur, wenn tatsächlich ein neues entstanden ist.
+
+Damit das greift, werden verschiedene Schreibweisen derselben Seite auf eine Form
+gebracht: `youtu.be/ABC`, `youtube.com/watch?v=ABC`, `m.youtube.com/...` und
+`youtube.com/shorts/ABC` gelten als dasselbe Video, Tracking-Parameter und ein
+abschließender Schrägstrich spielen keine Rolle. Kurzlinks wie `vm.tiktok.com/XYZ`
+löst yt-dlp beim Abruf auf — in Notion landet dann die vollständige Adresse.
+
+> Voraussetzung ist eine Spalte für die Quelle (bei dir `URL`). Ohne sie kann derselbe
+> Link nicht wiedererkannt werden und jeder Lauf legt eine neue Seite an.
+
 ## Titelbild
 
 Mit `COVER_IMAGE=true` und einem `IMAGE_MODEL` wird zu jedem Rezept ein Bild

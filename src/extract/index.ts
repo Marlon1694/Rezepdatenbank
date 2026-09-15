@@ -21,6 +21,14 @@ export type TextSource =
 export interface ExtractResult {
   text: string;
   source: TextSource;
+  /**
+   * Die endgueltige Adresse, wie yt-dlp bzw. die Seite selbst sie nennt.
+   *
+   * Entscheidend fuer die Duplikat-Erkennung: Ein aus der TikTok-App geteilter
+   * Kurzlink (vm.tiktok.com/XYZ) und die volle Adresse desselben Videos waeren
+   * sonst zwei verschiedene Rezepte.
+   */
+  canonicalUrl?: string;
   title?: string;
   uploader?: string;
   durationSeconds?: number;
@@ -67,6 +75,7 @@ export async function extract(url: string, onProgress: ProgressFn = () => {}): P
       return {
         text: page.text,
         source: "Rezept-Metadaten der Seite",
+        canonicalUrl: page.canonicalUrl,
         title: page.title,
         hintMinutes: isoDurationToMinutes(page.jsonLd.totalTime),
         transcribed: false,
@@ -77,7 +86,13 @@ export async function extract(url: string, onProgress: ProgressFn = () => {}): P
         "Auf der Seite war kaum Text zu finden. Lädt sie ihren Inhalt per JavaScript nach?",
       );
     }
-    return { text: page.text, source: "Seitentext", title: page.title, transcribed: false };
+    return {
+      text: page.text,
+      source: "Seitentext",
+      canonicalUrl: page.canonicalUrl,
+      title: page.title,
+      transcribed: false,
+    };
   }
 
   onProgress("Video-Infos werden geladen");
@@ -108,6 +123,7 @@ export async function extract(url: string, onProgress: ProgressFn = () => {}): P
       return {
         text: combined,
         source: c.source,
+        canonicalUrl: info.webpageUrl,
         title: info.title,
         uploader: info.uploader,
         durationSeconds: info.durationSeconds,
@@ -142,6 +158,7 @@ export async function extract(url: string, onProgress: ProgressFn = () => {}): P
       source: cfg.transcribeProvider === "gemini"
         ? "Transkription (Gemini)"
         : "Transkription (lokal)",
+      canonicalUrl: info.webpageUrl,
       title: info.title,
       uploader: info.uploader,
       durationSeconds: info.durationSeconds,

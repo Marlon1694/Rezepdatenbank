@@ -147,3 +147,24 @@ describe("parsePage", () => {
     expect(result.text).toContain("200 g Pasta");
   });
 });
+
+describe("findCanonicalUrl", () => {
+  it("liest <link rel=canonical>", async () => {
+    const { findCanonicalUrl } = await import("../src/extract/web.ts");
+    const html =
+      `<link rel="canonical" href="https://blog.de/pasta"/>` +
+      `<title>Pasta</title>`;
+    expect(findCanonicalUrl(html)).toBe("https://blog.de/pasta");
+  });
+
+  it("ignoriert relative Angaben", async () => {
+    const { findCanonicalUrl } = await import("../src/extract/web.ts");
+    // Ohne Absolutadresse waere der Wert fuer die Duplikat-Erkennung nutzlos.
+    expect(findCanonicalUrl(`<link rel="canonical" href="/pasta">`)).toBeUndefined();
+  });
+
+  it("gibt undefined zurück, wenn es keinen gibt", async () => {
+    const { findCanonicalUrl } = await import("../src/extract/web.ts");
+    expect(findCanonicalUrl("<title>Ohne</title>")).toBeUndefined();
+  });
+});

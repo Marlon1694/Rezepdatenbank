@@ -39,9 +39,12 @@ describe("cleanUrl", () => {
     expect(cleanUrl("https://www.tiktok.com/@koch/video/123?is_from_webapp=1&sender_device=pc")).toBe(
       "https://www.tiktok.com/@koch/video/123",
     );
-    expect(cleanUrl("https://youtu.be/abc?si=xyz123")).toBe("https://youtu.be/abc");
+    // youtu.be wird zusätzlich auf die lange Form vereinheitlicht (s.u.).
+    expect(cleanUrl("https://youtu.be/abc?si=xyz123")).toBe(
+      "https://www.youtube.com/watch?v=abc",
+    );
     expect(cleanUrl("https://www.instagram.com/reel/abc/?igshid=xyz")).toBe(
-      "https://www.instagram.com/reel/abc/",
+      "https://www.instagram.com/reel/abc",
     );
   });
 
@@ -52,6 +55,37 @@ describe("cleanUrl", () => {
     );
   });
 
+  it("führt verschiedene Schreibweisen desselben Videos zusammen", () => {
+    // Aus der App geteilt vs. aus dem Browser kopiert - dasselbe Video.
+    // Ohne Vereinheitlichung entstünden zwei Notion-Seiten.
+    const kurz = cleanUrl("https://youtu.be/8R39Hs5aQw4?si=xyz");
+    const lang = cleanUrl("https://www.youtube.com/watch?v=8R39Hs5aQw4");
+    const mobil = cleanUrl("https://m.youtube.com/watch?v=8R39Hs5aQw4");
+    expect(kurz).toBe(lang);
+    expect(mobil).toBe(lang);
+    expect(lang).toBe("https://www.youtube.com/watch?v=8R39Hs5aQw4");
+  });
+
+  it("behandelt YouTube-Shorts wie das normale Video", () => {
+    expect(cleanUrl("https://www.youtube.com/shorts/8R39Hs5aQw4")).toBe(
+      "https://www.youtube.com/watch?v=8R39Hs5aQw4",
+    );
+  });
+
+  it("ignoriert einen abschließenden Schrägstrich", () => {
+    expect(cleanUrl("https://www.tiktok.com/@koch/video/123/")).toBe(
+      cleanUrl("https://www.tiktok.com/@koch/video/123"),
+    );
+  });
+
+  it("lässt TikTok-Kurzlinks unangetastet", () => {
+    // vm.tiktok.com/XYZ lässt sich ohne Netzwerk nicht auflösen - das übernimmt
+    // später yt-dlp, dessen Ergebnis für Notion verwendet wird.
+    expect(cleanUrl("https://vm.tiktok.com/ZGdQUTHGQ/")).toBe(
+      "https://vm.tiktok.com/ZGdQUTHGQ",
+    );
+  });
+
   it("lässt saubere URLs unangetastet", () => {
     expect(cleanUrl("https://www.chefkoch.de/rezepte/1/Pasta.html")).toBe(
       "https://www.chefkoch.de/rezepte/1/Pasta.html",
@@ -59,6 +93,8 @@ describe("cleanUrl", () => {
   });
 
   it("schneidet Leerzeichen ab", () => {
-    expect(cleanUrl("  https://youtu.be/abc  ")).toBe("https://youtu.be/abc");
+    expect(cleanUrl("  https://www.youtube.com/watch?v=abc  ")).toBe(
+      "https://www.youtube.com/watch?v=abc",
+    );
   });
 });
