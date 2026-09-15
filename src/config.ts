@@ -89,6 +89,7 @@ export function getConfig(): Config {
     newRecipeStatus: process.env.NEW_RECIPE_STATUS,
     ytdlpAutoUpdate: process.env.YTDLP_AUTO_UPDATE,
     cookiesFile: process.env.COOKIES_FILE,
+    dataDir: process.env.DATA_DIR,
   });
 
   if (!parsed.success) {

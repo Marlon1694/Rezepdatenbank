@@ -17,14 +17,13 @@ try {
 /* ── API ──────────────────────────────────────────────────────────────────── */
 
 async function api(path, options = {}) {
-  const res = await fetch(path, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      ...(options.headers || {}),
-    },
-  });
+  // Content-Type nur setzen, wenn auch wirklich ein Body mitgeht. Fastify weist
+  // einen leeren Body mit "application/json" sonst mit HTTP 400 ab - was die
+  // Knöpfe "Erneut versuchen" und "Löschen" wirkungslos gemacht hat.
+  const headers = { Authorization: `Bearer ${token}`, ...(options.headers || {}) };
+  if (options.body !== undefined) headers["Content-Type"] = "application/json";
+
+  const res = await fetch(path, { ...options, headers });
 
   if (res.status === 401) {
     showSetup("Token wurde nicht akzeptiert.");
@@ -172,9 +171,15 @@ function renderJobs(jobs) {
       ${job.error ? `<div class="job-err">${escapeHtml(job.error)}</div>` : ""}
     `;
 
-    el.addEventListener("click", () => openDetail(job.id));
+    const open = () => {
+      openDetail(job.id).catch((err) => {
+        // Sonst versandet der Klick wortlos.
+        alert(`Details konnten nicht geladen werden: ${err.message}`);
+      });
+    };
+    el.addEventListener("click", open);
     el.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(job.id); }
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
     });
     box.appendChild(el);
   }
@@ -258,13 +263,31 @@ async function openDetail(id) {
   const actions = document.createElement("div");
   actions.className = "actions";
 
+  const actionMsg = document.createElement("p");
+  actionMsg.className = "msg err";
+  actionMsg.hidden = true;
+
+  /** Knopf, der bei einem Fehler nicht stumm stehenbleibt, sondern ihn anzeigt. */
+  function wire(btn, run) {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      actionMsg.hidden = true;
+      try {
+        await run();
+      } catch (err) {
+        actionMsg.hidden = false;
+        actionMsg.textContent = err.message;
+        btn.disabled = false;
+      }
+    });
+  }
+
   if (job.status === "failed") {
     const retry = document.createElement("button");
     retry.textContent = "Erneut versuchen";
     retry.className = "primary";
     retry.style.marginTop = "0";
-    retry.addEventListener("click", async () => {
-      retry.disabled = true;
+    wire(retry, async () => {
       await api(`/api/jobs/${id}/retry`, { method: "POST" });
       closeDetail();
       refresh();
@@ -275,14 +298,18 @@ async function openDetail(id) {
   const del = document.createElement("button");
   del.textContent = "Aus Verlauf löschen";
   del.className = "danger";
-  del.addEventListener("click", async () => {
-    if (!confirm("Diesen Eintrag aus dem Verlauf löschen? Die Notion-Seite bleibt bestehen.")) return;
+  wire(del, async () => {
+    if (!confirm("Diesen Eintrag aus dem Verlauf löschen? Die Notion-Seite bleibt bestehen.")) {
+      del.disabled = false;
+      return;
+    }
     await api(`/api/jobs/${id}`, { method: "DELETE" });
     closeDetail();
     refresh();
   });
   actions.appendChild(del);
   box.appendChild(actions);
+  box.appendChild(actionMsg);
 
   if (job.transcript) {
     const details = document.createElement("details");
