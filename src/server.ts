@@ -12,6 +12,7 @@ import { loadMapping } from "./jobs/mapping.ts";
 import { RecipeSchema } from "./llm/recipeSchema.ts";
 import * as ytdlp from "./extract/ytdlp.ts";
 import { detectPlatform } from "./extract/index.ts";
+import { coverImageBlocker } from "./llm/image.ts";
 import { cleanUrl, isValidUrl } from "./lib/url.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -79,6 +80,7 @@ export async function buildApp() {
     // dort mit einer Meldung, die nach einem kaputten Extraktor aussieht.
     impersonation: await ytdlp.hasImpersonation(),
     transcribeProvider: cfg.transcribeProvider,
+    coverImage: coverImageBlocker() || `aktiv (${cfg.imageModel})`,
   }));
 
   /** Prueft die Notion-Verbindung und zeigt das erkannte Schema. */
@@ -230,6 +232,11 @@ async function main(): Promise<void> {
     // Server soll deswegen nicht spaeter erreichbar sein.
     void ytdlp.selfUpdate();
   }
+
+  const blocker = coverImageBlocker();
+  app.log.info(
+    blocker ? `Titelbild: aus (${blocker})` : `Titelbild: ${cfg.imageModel}`,
+  );
 
   startWorker();
   await app.listen({ port: cfg.port, host: cfg.host });

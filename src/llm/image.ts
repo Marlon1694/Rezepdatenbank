@@ -96,9 +96,25 @@ async function viaGemini(model: string, prompt: string): Promise<GeneratedImage 
   throw lastError;
 }
 
+/** Warum ist kein Titelbild moeglich? Leerer String = alles bereit. */
+export function coverImageBlocker(): string {
+  const cfg = getConfig();
+  if (!cfg.coverImage) return "COVER_IMAGE steht nicht auf true";
+  if (!cfg.imageModel) return "IMAGE_MODEL ist nicht gesetzt";
+  if (!cfg.geminiApiKey) return "GEMINI_API_KEY fehlt";
+  return "";
+}
+
 export async function generateCoverImage(recipe: Recipe): Promise<GeneratedImage | undefined> {
   const cfg = getConfig();
-  if (!cfg.coverImage || !cfg.imageModel) return undefined;
+
+  const blocker = coverImageBlocker();
+  if (blocker) {
+    // Frueher wurde hier wortlos ausgestiegen - wer die .env unvollstaendig
+    // ausgefuellt hatte, bekam nirgends einen Hinweis darauf.
+    console.log(`[titelbild] nicht erzeugt: ${blocker}`);
+    return undefined;
+  }
 
   try {
     const prompt = await buildImagePrompt(recipe);
