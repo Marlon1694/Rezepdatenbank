@@ -135,6 +135,27 @@ npm run inspect:notion               # Datenbank-Schema prüfen
 npm run models                       # verfügbare Gemini-Modelle auflisten
 ```
 
+### Wenn TikTok fehlschlägt
+
+TikTok lässt nur Anfragen durch, die den TLS-Fingerabdruck eines echten Browsers
+vorweisen. Prüfen:
+
+```bash
+curl -s localhost:3000/api/health
+```
+
+Steht dort `"impersonation": false`, fehlt die Bibliothek `curl_cffi` — dann das
+Image neu bauen (`docker compose build --no-cache`). Im Image ist sie über
+`yt-dlp[default,curl-cffi]` enthalten.
+
+Bleibt es dabei, ist der Extraktor veraltet. TikTok ändert seine Seite häufig;
+Korrekturen erscheinen zuerst im nächtlichen Kanal — deshalb ist `YTDLP_CHANNEL`
+standardmäßig `nightly`. Der stabile Kanal hinkt Wochen hinterher.
+
+> Nicht über `yt-dlp -U` aktualisieren: Bei einer pip-Installation prüft das zwar
+> die GitHub-Releases, ersetzt sich aber nicht selbst und meldet fälschlich
+> „up to date". Die App aktualisiert deshalb über pip.
+
 ### Wenn Gemini mit HTTP 503 antwortet
 
 Das Modell ist vorübergehend überlastet. Die App wiederholt den Aufruf bis zu
@@ -162,6 +183,7 @@ Alles über die `.env`, Vorlage in [`.env.example`](.env.example). Die wichtigst
 | `GEMINI_FALLBACK_MODEL` | `gemini-2.5-flash` | Ausweichmodell bei Überlastung |
 | `GEMINI_TRANSCRIBE_MODEL` | `gemini-3.5-transcribe` | nur bei `TRANSCRIBE_PROVIDER=gemini` |
 | `YTDLP_AUTO_UPDATE` | `true` | yt-dlp beim Start aktualisieren |
+| `YTDLP_CHANNEL` | `nightly` | `nightly` oder `stable` — siehe unten |
 
 ## Entwicklung
 
