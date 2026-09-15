@@ -147,7 +147,7 @@ export async function fetchSubtitles(
 ): Promise<{ text: string; lang: string; auto: boolean } | undefined> {
   const dir = await mkdtemp(join(tmpdir(), "subs-"));
   try {
-    const { code } = await run([
+    const { code, stderr } = await run([
       "--skip-download",
       "--write-subs",
       "--write-auto-subs",
@@ -164,10 +164,24 @@ export async function fetchSubtitles(
       ...cookieArgs(),
       url,
     ]);
-    if (code !== 0) return undefined;
+    // Untertitel sind der schnellste Weg - schlaegt er fehl, laeuft stattdessen
+    // Whisper und der Job dauert Minuten statt Sekunden. Deshalb nicht still
+    // uebergehen, sondern den Grund protokollieren.
+    if (code !== 0) {
+      console.warn(`[untertitel] yt-dlp beendete sich mit ${code}: ${explainError(stderr)}`);
+      return undefined;
+    }
 
     const files = (await readdir(dir)).filter((f) => f.endsWith(".vtt"));
-    if (!files.length) return undefined;
+    if (!files.length) {
+      const hint = stderr.trim().split("\n").slice(-3).join(" | ");
+      console.warn(
+        `[untertitel] keine Datei erhalten. Das Video hat entweder keine, oder ` +
+          `YouTube verweigert sie ohne Cookies (siehe docs/cookies.md).` +
+          (hint ? ` Letzte Meldung: ${hint}` : ""),
+      );
+      return undefined;
+    }
 
     // Bevorzugung: gewuenschte Sprachreihenfolge, manuell vor automatisch.
     const score = (f: string): number => {

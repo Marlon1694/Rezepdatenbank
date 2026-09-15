@@ -84,7 +84,10 @@ export async function extract(url: string, onProgress: ProgressFn = () => {}): P
   const info = await ytdlp.probe(url);
 
   onProgress("Untertitel werden gesucht");
-  const subs = await ytdlp.fetchSubtitles(url).catch(() => undefined);
+  const subs = await ytdlp.fetchSubtitles(url).catch((err: unknown) => {
+    console.warn(`[untertitel] Abruf fehlgeschlagen: ${String(err)}`);
+    return undefined;
+  });
 
   const description = info.description?.trim() ?? "";
   const candidates: Array<{ text: string; source: TextSource }> = [];
@@ -111,6 +114,16 @@ export async function extract(url: string, onProgress: ProgressFn = () => {}): P
         transcribed: false,
       };
     }
+  }
+
+  // Sichtbar machen, warum trotz vorhandenem Text transkribiert wird - sonst
+  // raetselt man, weshalb ein Video mit Untertiteln zwei Minuten braucht.
+  for (const c of candidates) {
+    const grund =
+      c.text.length < cfg.freeTextMinChars
+        ? `nur ${c.text.length} Zeichen (Schwelle ${cfg.freeTextMinChars})`
+        : "sieht nicht nach einem Rezept aus";
+    console.log(`[extraktion] ${c.source} verworfen: ${grund}`);
   }
 
   onProgress("Tonspur wird heruntergeladen");
