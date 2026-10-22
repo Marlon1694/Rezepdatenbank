@@ -4,12 +4,42 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getConfig } from "../config.ts";
 import type { Recipe } from "../llm/recipeSchema.ts";
+import type { PhotoReading } from "../extract/photo.ts";
 
-export type JobStatus = "queued" | "running" | "done" | "failed";
+/**
+ * "draft" ist die Zwischenstufe eines Foto-Jobs: Die Zeile existiert schon
+ * (ihre ID benennt den Ablageordner), die Bilder sind aber noch nicht alle da.
+ * Der Worker nimmt nur "queued" - ein Entwurf kann also nicht halbfertig
+ * losrennen.
+ */
+export type JobStatus = "draft" | "queued" | "running" | "done" | "failed";
+
+/** Woher das Rezept kommt: ein Link oder hochgeladene Fotos. */
+export type JobKind = "link" | "foto";
 
 export interface Job {
   id: string;
+  kind: JobKind;
   url: string;
+  /** Nur bei kind="foto": Dateinamen unter data/uploads/<besitzer>/, in Reihenfolge. */
+  photos: string[];
+  /**
+   * Gesetzt bei einem Rezept, das aus einem Stapel stammt. Die Bilder liegen
+   * dann beim Elternteil - ein Kochbuch wird nicht fuer jedes Rezept erneut
+   * auf die Platte geschrieben.
+   */
+  parentId: string | null;
+  /**
+   * Die bereits gelesene Abschrift. Der Elternteil liest den Stapel einmal und
+   * teilt ihn auf; die Kinder muessen die Bilder dann nicht noch einmal an das
+   * Modell schicken.
+   */
+  reading: PhotoReading | null;
+  /**
+   * Die Bilder wurden nach dem Erfolg geloescht. Sie sind dann weder anzuzeigen
+   * noch fuer einen zweiten Anlauf zu gebrauchen.
+   */
+  photosDeleted: boolean;
   status: JobStatus;
   step: string;
   error: string | null;
@@ -28,7 +58,12 @@ export interface Job {
 
 interface Row {
   id: string;
+  kind: JobKind;
   url: string;
+  photos_json: string | null;
+  parent_id: string | null;
+  reading_json: string | null;
+  photos_deleted: number | null;
   status: JobStatus;
   step: string;
   error: string | null;
@@ -57,7 +92,12 @@ function connect(): Database.Database {
   db.exec(`
     CREATE TABLE IF NOT EXISTS jobs (
       id              TEXT PRIMARY KEY,
-      url             TEXT NOT NULL,
+      kind            TEXT NOT NULL DEFAULT 'link',
+      url             TEXT NOT NULL DEFAULT '',
+      photos_json     TEXT,
+      parent_id       TEXT,
+      reading_json    TEXT,
+      photos_deleted  INTEGER NOT NULL DEFAULT 0,
       status          TEXT NOT NULL,
       step            TEXT NOT NULL DEFAULT '',
       error           TEXT,
@@ -76,13 +116,48 @@ function connect(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_jobs_status  ON jobs(status);
   `);
+  migrate(db);
   return db;
+}
+
+/**
+ * Nachtraegliche Spalten fuer bestehende Datenbanken.
+ *
+ * CREATE TABLE IF NOT EXISTS laesst eine vorhandene Tabelle unveraendert - wer
+ * schon Jobs erfasst hat, bekaeme die neuen Spalten sonst nie. Deshalb hier
+ * einzeln nachziehen, was fehlt.
+ */
+function migrate(handle: Database.Database): void {
+  const vorhanden = new Set(
+    (handle.prepare(`PRAGMA table_info(jobs)`).all() as Array<{ name: string }>).map(
+      (c) => c.name,
+    ),
+  );
+  const nachtraeglich: Array<[string, string]> = [
+    ["kind", `ALTER TABLE jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'link'`],
+    ["photos_json", `ALTER TABLE jobs ADD COLUMN photos_json TEXT`],
+    ["parent_id", `ALTER TABLE jobs ADD COLUMN parent_id TEXT`],
+    ["reading_json", `ALTER TABLE jobs ADD COLUMN reading_json TEXT`],
+    ["photos_deleted", `ALTER TABLE jobs ADD COLUMN photos_deleted INTEGER NOT NULL DEFAULT 0`],
+  ];
+  for (const [spalte, sql] of nachtraeglich) {
+    if (!vorhanden.has(spalte)) {
+      handle.exec(sql);
+      console.log(`[jobs] Spalte "${spalte}" ergaenzt.`);
+    }
+  }
 }
 
 function toJob(row: Row): Job {
   return {
     id: row.id,
+    // Alte Zeilen haben die Spalte nicht - die stammen alle aus der Link-Zeit.
+    kind: row.kind ?? "link",
     url: row.url,
+    photos: row.photos_json ? (JSON.parse(row.photos_json) as string[]) : [],
+    parentId: row.parent_id ?? null,
+    reading: row.reading_json ? (JSON.parse(row.reading_json) as PhotoReading) : null,
+    photosDeleted: row.photos_deleted === 1,
     status: row.status,
     step: row.step,
     error: row.error,
@@ -101,17 +176,96 @@ function toJob(row: Row): Job {
 }
 
 export function createJob(url: string): Job {
+  return insert({ kind: "link", url, photos: [] });
+}
+
+/**
+ * Ein Foto-Job wird in zwei Schritten angelegt: erst die Zeile (fuer die ID,
+ * die den Ablageordner benennt), dann die Dateinamen. Deshalb darf er ohne
+ * Fotos entstehen - eingereiht wird er erst mit setPhotos().
+ */
+export function createPhotoJob(): Job {
+  return insert({ kind: "foto", url: "", photos: [], status: "draft" });
+}
+
+function insert(opts: {
+  kind: JobKind;
+  url: string;
+  photos: string[];
+  status?: JobStatus;
+}): Job {
+  const now = new Date().toISOString();
+  const id = randomUUID();
+  const status = opts.status ?? "queued";
+  connect()
+    .prepare(
+      `INSERT INTO jobs (id, kind, url, photos_json, status, step, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      opts.kind,
+      opts.url,
+      opts.photos.length ? JSON.stringify(opts.photos) : null,
+      status,
+      status === "draft" ? "Fotos werden hochgeladen" : "Wartet",
+      now,
+      now,
+    );
+  const job = getJob(id);
+  if (!job) throw new Error("Job konnte nicht angelegt werden.");
+  return job;
+}
+
+/**
+ * Ein Rezept aus einem Stapel. Die Bilder bleiben beim Elternteil liegen -
+ * ein abfotografiertes Kochbuch wird nicht fuer jedes Rezept erneut auf die
+ * Platte geschrieben.
+ */
+export function createChildJob(opts: {
+  parentId: string;
+  photos: string[];
+  reading: PhotoReading;
+  title?: string;
+}): Job {
   const now = new Date().toISOString();
   const id = randomUUID();
   connect()
     .prepare(
-      `INSERT INTO jobs (id, url, status, step, created_at, updated_at)
-       VALUES (?, ?, 'queued', 'Wartet', ?, ?)`,
+      `INSERT INTO jobs
+         (id, kind, url, photos_json, parent_id, reading_json, title,
+          status, step, created_at, updated_at)
+       VALUES (?, 'foto', '', ?, ?, ?, ?, 'queued', 'Wartet', ?, ?)`,
     )
-    .run(id, url, now, now);
+    .run(
+      id,
+      JSON.stringify(opts.photos),
+      opts.parentId,
+      JSON.stringify(opts.reading),
+      opts.title ?? null,
+      now,
+      now,
+    );
   const job = getJob(id);
   if (!job) throw new Error("Job konnte nicht angelegt werden.");
   return job;
+}
+
+export function childrenOf(parentId: string): Job[] {
+  const rows = connect()
+    .prepare(`SELECT * FROM jobs WHERE parent_id = ? ORDER BY created_at ASC`)
+    .all(parentId) as Row[];
+  return rows.map(toJob);
+}
+
+/** Schliesst einen Foto-Job ab: Dateinamen eintragen und einreihen. */
+export function queuePhotoJob(id: string, photos: string[]): void {
+  connect()
+    .prepare(
+      `UPDATE jobs SET photos_json = ?, status = 'queued', step = 'Wartet', updated_at = ?
+       WHERE id = ?`,
+    )
+    .run(JSON.stringify(photos), new Date().toISOString(), id);
 }
 
 export function getJob(id: string): Job | undefined {
@@ -121,7 +275,9 @@ export function getJob(id: string): Job | undefined {
 
 export function listJobs(limit = 50): Job[] {
   const rows = connect()
-    .prepare(`SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?`)
+    .prepare(
+      `SELECT * FROM jobs WHERE status != 'draft' ORDER BY created_at DESC LIMIT ?`,
+    )
     .all(limit) as Row[];
   return rows.map(toJob);
 }
@@ -134,6 +290,9 @@ export function nextQueuedJob(): Job | undefined {
 }
 
 type Patch = Partial<{
+  reading: PhotoReading | null;
+  photosDeleted: boolean;
+  photos: string[];
   status: JobStatus;
   step: string;
   error: string | null;
@@ -149,6 +308,9 @@ type Patch = Partial<{
 }>;
 
 const COLUMN: Record<keyof Patch, string> = {
+  reading: "reading_json",
+  photosDeleted: "photos_deleted",
+  photos: "photos_json",
   status: "status",
   step: "step",
   error: "error",
@@ -169,9 +331,11 @@ export function updateJob(id: string, patch: Patch): void {
 
   for (const [key, value] of Object.entries(patch) as Array<[keyof Patch, unknown]>) {
     sets.push(`${COLUMN[key]} = ?`);
-    if (key === "recipe") values.push(value ? JSON.stringify(value) : null);
-    else if (key === "notionUpdated") values.push(value ? 1 : 0);
-    else values.push(value ?? null);
+    if (key === "recipe" || key === "reading" || key === "photos") {
+      values.push(value ? JSON.stringify(value) : null);
+    } else if (key === "notionUpdated" || key === "photosDeleted") {
+      values.push(value ? 1 : 0);
+    } else values.push(value ?? null);
   }
   if (!sets.length) return;
 
@@ -193,6 +357,18 @@ export function requeueStaleJobs(): number {
     .prepare(`UPDATE jobs SET status = 'queued', step = 'Wartet' WHERE status = 'running'`)
     .run();
   return changes;
+}
+
+/**
+ * Entwuerfe, bei denen das Hochladen abgebrochen wurde. Sie tauchen nirgends
+ * auf und wuerden sonst samt Bildern liegen bleiben.
+ */
+export function staleDrafts(olderThanMinutes = 60): Job[] {
+  const grenze = new Date(Date.now() - olderThanMinutes * 60_000).toISOString();
+  const rows = connect()
+    .prepare(`SELECT * FROM jobs WHERE status = 'draft' AND created_at < ?`)
+    .all(grenze) as Row[];
+  return rows.map(toJob);
 }
 
 export function closeDb(): void {

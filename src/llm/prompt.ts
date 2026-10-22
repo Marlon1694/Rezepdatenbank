@@ -1,10 +1,18 @@
 import { readFile } from "node:fs/promises";
 import { getConfig } from "../config.ts";
 import type { ExtraField } from "../notion/mapper.ts";
+import type { RecipeMode } from "../extract/photo.ts";
 
 export interface PromptContext {
   input: string;
   sourceUrl: string;
+  /**
+   * Nur bei Fotos gesetzt. Entscheidet, ob die Regel "Nichts erfinden" gilt
+   * oder gezielt ausgehebelt wird. Fehlt sie, bleibt alles wie bisher.
+   */
+  mode?: RecipeMode;
+  /** Was laut Vision-Stufe fehlt - wird im Ergaenzungsmodus benannt. */
+  fehlt?: string[];
   sourceTitle?: string;
   uploader?: string;
   platform?: string;
@@ -78,10 +86,67 @@ export async function buildPrompt(ctx: PromptContext): Promise<string> {
     .filter(Boolean)
     .join("\n");
 
-  return body
+  const modus = buildModeSection(ctx.mode, ctx.fehlt);
+
+  const gefuellt = body
     .replace("{{BEKANNTE_TAGS}}", knownTags)
     .replace("{{ZUSATZFELDER}}", extras)
     .replace("{{QUELLE}}", quelle)
-    .replace("{{INPUT}}", ctx.input)
-    .trim();
+    .replace("{{INPUT}}", ctx.input);
+
+  // Die Prompt-Datei liegt als Volume auf dem Server und darf bearbeitet
+  // werden. Fehlt der neue Platzhalter in einer aelteren oder angepassten
+  // Fassung, haengen wir den Abschnitt an, statt ihn stillschweigend fallen
+  // zu lassen - sonst waere im Ergaenzungsmodus wieder "Nichts erfinden" in
+  // Kraft und das Rezept bliebe unvollstaendig.
+  if (gefuellt.includes("{{MODUS}}")) {
+    return gefuellt.replace("{{MODUS}}", modus).trim();
+  }
+  return modus ? `${gefuellt.trim()}\n\n${modus}` : gefuellt.trim();
+}
+
+/**
+ * Der Abschnitt, der die Grundregel "Nichts erfinden" fuer Fotos anpasst.
+ *
+ * Bei Videos bleibt er leer - dort ist Erfinden nie erwuenscht.
+ */
+export function buildModeSection(mode: RecipeMode | undefined, fehlt: string[] = []): string {
+  if (!mode || mode === "abtippen") return "";
+
+  const luecken = fehlt.length ? fehlt.join(", ") : "Teile des Rezepts";
+
+  if (mode === "erfinden") {
+    return [
+      "## Sonderfall: Das Material zeigt kein Rezept",
+      "",
+      "Auf den Bildern ist das fertige Gericht zu sehen, aber kein brauchbares Rezept.",
+      "Die Regel „Nichts erfinden“ ist hier **ausgesetzt**: Entwickle ein vollständiges,",
+      "kochbares Rezept für genau dieses Gericht.",
+      "",
+      "- Richte dich nach dem, was auf dem Bild erkennbar ist — Zutaten, Beilagen,",
+      "  Garmethode, Portionsgröße. Erfinde kein anderes Gericht.",
+      "- Bleib bei einer naheliegenden, klassischen Zubereitung. Keine ausgefallenen",
+      "  Techniken, keine schwer erhältlichen Zutaten.",
+      "- Setze **hinter jede Mengenangabe** `(geschätzt)`.",
+      "- Schreibe in `pro_tipp` als ersten Satz: „Dieses Rezept wurde anhand eines Fotos",
+      "  erstellt — die Mengen sind geschätzt.“",
+    ].join("\n");
+  }
+
+  return [
+    "## Sonderfall: Das Material ist unvollständig",
+    "",
+    `Das Rezept auf den Bildern ist lückenhaft. Es fehlt: ${luecken}.`,
+    "",
+    "Die Regel „Nichts erfinden“ gilt hier **eingeschränkt**:",
+    "",
+    "- Alles, was im Material steht, wird **unverändert** übernommen. Ändere keine",
+    "  Menge, keine Zutat und keinen Schritt, der dasteht.",
+    "- **Nur die Lücken** füllst du so, dass das Rezept kochbar wird — knapp und",
+    "  naheliegend, passend zu dem, was dasteht.",
+    "- Jede Ergänzung wird gekennzeichnet: Mengen bekommen `(ergänzt)` angehängt,",
+    "  ergänzte Arbeitsschritte beginnen mit `(ergänzt)`.",
+    "- Was im Material steht, bleibt **ohne** Kennzeichnung. So ist auf einen Blick",
+    "  erkennbar, was aus dem Buch stammt und was nicht.",
+  ].join("\n");
 }

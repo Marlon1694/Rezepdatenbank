@@ -1,4 +1,11 @@
 import { extract, detectPlatform, type ProgressFn } from "../extract/index.ts";
+import {
+  readPhotos,
+  modeFor,
+  usableReadings,
+  type PhotoReading,
+  type RecipeMode,
+} from "../extract/photo.ts";
 import { extractRecipe } from "../llm/index.ts";
 import { getDataSourceSchema } from "../notion/client.ts";
 import { availableExtraFields, knownTags, knownOptions } from "../notion/mapper.ts";
@@ -14,6 +21,147 @@ export interface PipelineResult {
   platform: string;
   textSource: string;
   transcript: string;
+}
+
+export interface PhotoPipelineInput {
+  /** Vollstaendige Pfade der Bilder dieses Jobs, in Reihenfolge. */
+  paths: string[];
+  /**
+   * Bereits gelesen. Bei einem Rezept aus einem Stapel hat der Elternteil die
+   * Bilder schon gelesen und aufgeteilt - dann faellt die Vision-Stufe weg.
+   */
+  reading?: PhotoReading;
+  /** Bereits bestehende Notion-Seite dieses Jobs (zweiter Anlauf). */
+  existingPageId?: string;
+  onProgress?: ProgressFn;
+  dryRun?: boolean;
+}
+
+/**
+ * Auf den Bildern lagen mehrere Rezepte. Daraus macht der Worker eigene Jobs -
+ * so bekommt jedes Rezept seine eigene Notion-Seite, seinen eigenen Eintrag im
+ * Verlauf und seine eigene Korrekturansicht.
+ */
+export interface PhotoSplit {
+  split: true;
+  readings: PhotoReading[];
+}
+
+export type PhotoOutcome = PipelineResult | PhotoSplit;
+
+/** Was in Notion oben auf der Seite steht, wenn die KI nachgeholfen hat. */
+function noticeFor(mode: RecipeMode, fehlt: string[]): string | undefined {
+  if (mode === "abtippen") return undefined;
+  if (mode === "erfinden") {
+    return (
+      "Dieses Rezept wurde von der KI anhand eines Fotos des Gerichts entwickelt. " +
+      "Es stammt aus keiner Vorlage — Zutaten und Mengen sind geschätzt."
+    );
+  }
+  const luecken = fehlt.length ? ` Ergänzt wurde: ${fehlt.join(", ")}.` : "";
+  return (
+    "Die Vorlage war unvollständig. Die mit „(ergänzt)“ markierten Stellen stammen " +
+    `von der KI, alles Übrige steht so im Original.${luecken}`
+  );
+}
+
+/**
+ * Derselbe Weg wie bei einem Link, nur dass der Text nicht aus Untertiteln
+ * kommt, sondern von einem Foto gelesen wird.
+ *
+ * Ab der Strukturierung ist es exakt dieselbe Strecke: gleicher Prompt,
+ * gleiches Schema, gleiche Notion-Zuordnung.
+ */
+export async function runPhotoPipeline(input: PhotoPipelineInput): Promise<PhotoOutcome> {
+  const onProgress = input.onProgress ?? (() => {});
+
+  let reading = input.reading;
+
+  if (!reading) {
+    onProgress(input.paths.length > 1 ? "Fotos werden gelesen" : "Foto wird gelesen");
+    const gelesen = await readPhotos(input.paths, onProgress);
+    const brauchbar = usableReadings(gelesen);
+
+    console.log(
+      `[foto] ${input.paths.length} Bild(er) gelesen: ${gelesen.length} Abschnitt(e), ` +
+        `davon ${brauchbar.length} brauchbar.`,
+    );
+
+    // Ein Buchdeckel oder ein Inhaltsverzeichnis ergibt kein Rezept. Das jetzt
+    // zu sagen ist ehrlicher, als die KI eines erfinden zu lassen.
+    if (!brauchbar.length) {
+      throw new Error(
+        "Auf den Fotos ist kein Rezept zu erkennen — und auch kein Gericht, aus dem " +
+          "sich eines ableiten ließe. Ist die Seite vollständig im Bild und gut " +
+          "ausgeleuchtet? Bei gewölbten Buchseiten hilft es, die Seite flach zu drücken.",
+      );
+    }
+
+    // Mehrere Rezepte: Der Worker macht daraus eigene Jobs. Hier ist Schluss.
+    if (brauchbar.length > 1) return { split: true, readings: brauchbar };
+
+    reading = brauchbar[0] as PhotoReading;
+  }
+
+  const mode = modeFor(reading);
+  console.log(
+    `[foto] "${reading.titel ?? "ohne Titel"}": erkannt als "${reading.art}", ` +
+      `Modus "${mode}"` +
+      (reading.fehlt.length ? `, fehlt: ${reading.fehlt.join(", ")}` : ""),
+  );
+
+  onProgress("Rezept wird erstellt");
+  const [schema, mapping] = await Promise.all([getDataSourceSchema(), loadMapping()]);
+
+  const recipe = await extractRecipe({
+    input: reading.abschrift || "(Die Bilder enthalten keinen lesbaren Text.)",
+    sourceUrl: "",
+    sourceTitle: reading.titel,
+    platform: "Foto",
+    mode,
+    fehlt: reading.fehlt,
+    knownTags: knownTags(schema, mapping),
+    knownIngredients: knownOptions(schema, "zutatenliste", mapping),
+    extraFields: availableExtraFields(schema, mapping),
+  });
+
+  // Im Erfindungsmodus ist das Rezept definitionsgemaess vollstaendig - die
+  // Pruefung gilt dem, was aus einer echten Vorlage kommt.
+  const mangel = mode === "erfinden" ? "" : recipeShortcoming(recipe);
+  if (mangel) {
+    throw new Error(
+      `Aus den Fotos ließ sich kein vollständiges Rezept gewinnen — ${mangel}. ` +
+        `(Gelesen: ${reading.abschrift.length} Zeichen)`,
+    );
+  }
+
+  const label =
+    input.paths.length > 1 ? `Eigenes Foto (${input.paths.length} Bilder)` : "Eigenes Foto";
+
+  onProgress(input.dryRun ? "Vorschau wird gebaut" : "Wird nach Notion geschrieben");
+  const upsert = await upsertRecipe({
+    recipe,
+    sourceUrl: "",
+    sourceLabel: label,
+    sourceTitle: reading.titel,
+    existingPageId: input.existingPageId,
+    coverFile:
+      reading.gerichtBildIndex !== undefined ? input.paths[reading.gerichtBildIndex] : undefined,
+    aiNotice: noticeFor(mode, reading.fehlt),
+    transcript: reading.abschrift,
+    transcriptSource: `Foto (${reading.art})`,
+    mapping,
+    dryRun: input.dryRun,
+  });
+
+  return {
+    recipe,
+    upsert,
+    title: reading.titel ?? recipe.titel,
+    platform: "Foto",
+    textSource: `Foto (${reading.art})`,
+    transcript: reading.abschrift,
+  };
 }
 
 /**

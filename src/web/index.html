@@ -43,13 +43,44 @@
     <p class="muted small">YouTube, Instagram, TikTok, Food-Blogs — alles was einen Link hat.</p>
   </section>
 
+  <!-- Abfotografiertes Rezept -->
+  <section id="photoCard" class="card" hidden>
+    <h2 class="card-title">📷 Rezept abfotografieren</h2>
+
+    <div class="row">
+      <button id="cameraBtn" class="ghost wide">Kamera</button>
+      <button id="pickBtn" class="ghost wide">Aus Fotos wählen</button>
+    </div>
+
+    <!-- Zwei Felder: "capture" öffnet direkt die Kamera, ohne es geht es in
+         die Mediathek. Ein Feld kann nicht beides. -->
+    <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+    <input id="pickInput" type="file" accept="image/*" multiple hidden>
+
+    <div id="thumbs" class="thumbs" hidden></div>
+
+    <button id="photoSubmit" class="primary" hidden>Rezept aus Fotos erstellen</button>
+    <p id="photoMsg" class="msg" hidden></p>
+    <p class="muted small">
+      Kochbuchseite, Zeitschrift, handschriftliche Karte oder Bildschirmfoto.
+      <strong>Du musst nicht vorsortieren:</strong> Stehen mehrere Rezepte auf einer
+      Seite, werden daraus mehrere Einträge. Zieht sich eines über zwei Seiten,
+      wird es wieder zusammengefügt. Du kannst auch ein ganzes Kochbuch der Reihe
+      nach abfotografieren und alles auf einmal hochladen.
+    </p>
+    <p class="muted small">
+      Zeigt ein Bild das fertige Gericht, wird es das Titelbild in Notion.
+      Nach dem erfolgreichen Durchlauf werden die Fotos vom Server gelöscht.
+    </p>
+  </section>
+
   <section id="listSection" hidden>
     <div class="list-head">
       <h2>Verlauf</h2>
       <button id="refreshBtn" class="ghost small-btn">Aktualisieren</button>
     </div>
     <div id="jobs" class="jobs"></div>
-    <p id="empty" class="muted" hidden>Noch nichts erfasst. Wirf oben einen Link ein.</p>
+    <p id="empty" class="muted" hidden>Noch nichts erfasst. Wirf oben einen Link ein — oder fotografiere ein Rezept ab.</p>
   </section>
 </main>
 

@@ -1,25 +1,32 @@
 # 🍲 Rezeptdatenbank
 
 Rezept-Links von **YouTube, Instagram, TikTok und Food-Blogs** per Teilen-Menü aufs
-iPhone-Icon tippen — transkribieren, strukturieren, fertig in deiner **Notion-Rezept-
-Datenbank**.
+iPhone-Icon tippen — oder eine **Kochbuchseite abfotografieren**. Transkribieren,
+strukturieren, fertig in deiner **Notion-Rezept-Datenbank**.
 
 Läuft auf deinem eigenen Proxmox. **Laufende Kosten: 0 €.**
 
 ```
-iPhone: Teilen (TikTok/Insta/YouTube) → Kurzbefehl
-            │  POST /api/jobs { url }
-            ▼
+iPhone: Teilen (TikTok/Insta/YouTube)      iPhone: Kamera / Fotos
+            │  POST /api/jobs { url }             │  POST /api/jobs/foto
+            ▼                                     ▼
    Fastify + Worker + SQLite   (ein Docker-Container)
-            │
-   1. yt-dlp        → Titel, Beschreibung, Untertitel
-   2. Gratis-Text?  → reicht das schon? dann Transkription überspringen
-   3. faster-whisper → lokal, kostenlos, ohne Limit
+            │                                     │
+   1. yt-dlp        → Titel, Beschreibung,   1. Gemini Vision → abschreiben
+                      Untertitel                             und einordnen
+   2. Gratis-Text?  → reicht das schon?
+   3. faster-whisper → lokal, kostenlos
+            │                                     │
+            └──────────────┬──────────────────────┘
+                           ▼
    4. Gemini Flash  → dein Prompt → strukturiertes Rezept
    5. Notion        → Seite anlegen oder bestehende aktualisieren
-            ▼
-      Rezept-Karte in Notion
+                           ▼
+                 Rezept-Karte in Notion
 ```
+
+Ab Schritt 4 ist beides derselbe Weg: gleicher Prompt, gleiches Schema, gleiche
+Spalten-Zuordnung.
 
 ## Was daraus in Notion entsteht
 
@@ -185,13 +192,102 @@ Tracking gilt — dort kann ein Parameter wie `?seite=2` inhaltlich wichtig sein
 > Voraussetzung ist eine Spalte für die Quelle (bei dir `URL`). Ohne sie kann derselbe
 > Link nicht wiedererkannt werden und jeder Lauf legt eine neue Seite an.
 
+## Abfotografierte Rezepte
+
+Kochbuchseite, Zeitschrift, handschriftliche Karte, Bildschirmfoto — in der Web-App
+unter **📷 Rezept abfotografieren**.
+
+**Du musst nicht vorsortieren.** Fotografiere der Reihe nach und lade alles auf
+einmal hoch — bis zu `MAX_PHOTOS_PER_JOB` Bilder, standardmäßig 60. Die Aufteilung
+macht die Leseschicht:
+
+- Stehen **zwei Rezepte auf einer Seite**, werden daraus zwei Einträge.
+- Zieht sich **ein Rezept über zwei Seiten**, wird es wieder zusammengefügt.
+- **Vorwort, Register und Buchdeckel** werden übergangen, statt den Lauf abzubrechen.
+
+Aus einem Stapel mit mehreren Rezepten entstehen **eigenständige Jobs**: jeder mit
+eigener Notion-Seite, eigenem Eintrag im Verlauf und eigener Korrekturansicht. Der
+Stapel selbst bleibt als Sammeleintrag stehen (`12 Fotos → 7 Rezepte`); löschst du
+ihn, gehen die Einträge der Rezepte mit — die Notion-Seiten bleiben.
+
+Die Bilder werden **im Browser verkleinert**, bevor sie hochgeladen werden (lange
+Kante 1800 px, JPEG). Ein iPhone-Foto schrumpft damit von rund 3 MB auf gut 300 kB —
+über die VPN macht das den Unterschied zwischen „gleich da" und „lädt noch".
+
+### Warum blockweise gelesen wird
+
+Die Bilder gehen nicht alle in einer Anfrage ans Modell, sondern in Blöcken von
+`VISION_CHUNK_SIZE` (Standard 4). Dreißig Seiten auf einmal bringt jedes Modell dazu,
+Rezepte zusammenzuziehen oder zu überspringen.
+
+Damit ein Rezept an der Blockgrenze nicht in zwei Hälften zerfällt, meldet jeder
+Block, ob ein Rezept **vorher begonnen hat** oder **weitergeht**. Nur wenn beide
+Seiten das sagen, werden sie zusammengenäht — ein einseitiges Signal reicht nicht,
+sonst verschmölzen zwei unabhängige Rezepte.
+
+### Abtippen oder ergänzen?
+
+Die Vision-Stufe liest nicht nur, sie beurteilt auch, **was** sie da vor sich hat.
+Danach richtet sich, wie streng gearbeitet wird:
+
+| Was auf dem Foto ist | Was passiert | Kennzeichnung in Notion |
+|---|---|---|
+| Vollständiges Rezept | Wird **1:1 abgetippt**. Es gilt dieselbe Regel wie bei Videos: nichts erfinden, keine Menge raten. | keine — alles stammt aus der Vorlage |
+| Rezept mit Lücken (abgeschnittene Seite, fehlende Backtemperatur, nur Zutaten) | Vorhandenes bleibt **unverändert**, nur die Lücken werden gefüllt. | jede Ergänzung mit `(ergänzt)`, dazu ein Hinweis oben auf der Seite |
+| Nur das fertige Gericht, kein Text | Die KI entwickelt ein passendes Rezept dazu. | alle Mengen mit `(geschätzt)`, deutlicher Hinweis oben |
+| Buchdeckel, Inhaltsverzeichnis, unleserlich | Job bricht ab mit einem Hinweis zum Licht und zur gewölbten Seite. | — |
+
+So steht in der Datenbank immer, worauf ein Rezept beruht. Ein abgetipptes
+Kochbuchrezept und eines, das die KI sich ausgedacht hat, sind auf einen Blick
+auseinanderzuhalten — auch in einem Jahr noch.
+
+### Titelbild aus dem Foto
+
+Zeigt eines der Bilder das **fertige Gericht** (nicht eine bedruckte Seite mit einem
+Foto darauf), wird genau dieses Bild das Titelbild der Notion-Seite. Das entscheidet
+dieselbe Anfrage, die auch den Text liest — es kostet also keine zusätzliche.
+
+### Was mit den Bildern passiert
+
+Sie liegen unter `data/uploads/<job-id>/` — aber **nur so lange sie gebraucht
+werden**:
+
+| Wann | Was passiert |
+|---|---|
+| Rezept steht in Notion | Bilder werden **gelöscht**. Das Titelbild liegt dann ohnehin bei Notion. |
+| Job fehlgeschlagen | Bilder **bleiben**, damit „Erneut versuchen" ohne neues Fotografieren geht. |
+| Stapel mit mehreren Rezepten | Bilder bleiben, bis **alle** Rezepte daraus durch sind — wer zuerst fertig ist, nimmt sie den anderen nicht weg. |
+| Nach `PHOTO_RETENTION_DAYS` | Reste werden beim Start weggeräumt (Standard 14 Tage, `0` = nie). |
+| Eintrag gelöscht | Bilder gehen mit. |
+
+So wächst der Datenordner nicht still vor sich hin. Beim Start steht im Log, wie viel
+dort liegt:
+
+```
+[uploads] 4.2 MB in 3 Ordner(n).
+```
+
+Dasselbe zeigt `/api/health` unter `uploads`.
+
+Willst du die Bilder behalten, setze `DELETE_PHOTOS_AFTER_SUCCESS=false`. Dann greift
+nur noch die Aufbewahrungsfrist.
+
+> Nach dem Löschen ist **„Erneut versuchen"** für dieses Rezept nicht mehr möglich —
+> die Web-App blendet den Knopf dann aus und sagt warum. Das **Rezept** kannst du
+> weiterhin bearbeiten und erneut nach Notion schreiben; dafür braucht es die Bilder
+> nicht.
+
+> **Ohne `GEMINI_API_KEY`** gibt es keine Foto-Funktion — die Karte wird dann in der
+> Web-App gar nicht erst angezeigt, statt dass der Fehler erst nach dem Hochladen
+> kommt.
+
 ## Titelbild
 
 Gesteuert über `COVER_SOURCE`:
 
 | Wert | Woher das Bild kommt |
 |---|---|
-| **`thumbnail`** *(Standard)* | Vorschaubild des Videos, bei Blogs das Bild aus `schema.org/Recipe`, sonst `og:image`. Kostenlos, zeigt das Gericht aus genau diesem Rezept. |
+| **`thumbnail`** *(Standard)* | Bei Fotos: dein eigenes Bild des Gerichts. Sonst das Vorschaubild des Videos, bei Blogs das Bild aus `schema.org/Recipe`, sonst `og:image`. Kostenlos, zeigt das Gericht aus genau diesem Rezept. |
 | `ai` | Erzeugtes Bild nach [`prompts/cover.de.md`](prompts/cover.de.md). **Kostenpflichtig** — siehe unten. |
 | `thumbnail+ai` | Vorschaubild, und nur wenn keines vorhanden ist, ein erzeugtes. |
 | `none` | Kein Titelbild. |
@@ -333,6 +429,12 @@ Alles über die `.env`, Vorlage in [`.env.example`](.env.example). Die wichtigst
 | `GEMINI_FALLBACK_MODEL` | `gemini-3.6-flash` | Ausweichmodell bei Überlastung |
 | `GEMINI_TRANSCRIBE_MODEL` | `gemini-3.5-transcribe` | nur bei `TRANSCRIBE_PROVIDER=gemini` |
 | `COVER_SOURCE` | `thumbnail` | `thumbnail`, `ai`, `thumbnail+ai` oder `none` |
+| `MAX_PHOTOS_PER_JOB` | `60` | wie viele Bilder auf einmal hochgeladen werden dürfen |
+| `VISION_CHUNK_SIZE` | `4` | wie viele Bilder pro Leseanfrage ans Modell gehen |
+| `DELETE_PHOTOS_AFTER_SUCCESS` | `true` | Bilder löschen, sobald das Rezept in Notion steht |
+| `PHOTO_RETENTION_DAYS` | `14` | nach wie vielen Tagen liegengebliebene Bilder verschwinden (`0` = nie) |
+| `MAX_PHOTO_BYTES` | `12582912` | Obergrenze je Bild (12 MB); die Web-App verkleinert ohnehin vorher |
+| `VISION_MODEL` | *(leer)* | eigenes Modell zum Lesen der Fotos; leer = `GEMINI_MODEL` |
 | `IMAGE_MODEL` | — | Bildmodell für `ai` (`npm run models` zeigt die Namen) |
 | `YTDLP_AUTO_UPDATE` | `true` | yt-dlp beim Start aktualisieren |
 | `YTDLP_CHANNEL` | `nightly` | `nightly` oder `stable` — siehe unten |
@@ -355,11 +457,11 @@ JSON-LD-Extraktion, die Zuordnung auf Notion-Spaltentypen und den Tag-Abgleich.
 ```
 src/
   server.ts          Fastify: API + Web-App
-  extract/           yt-dlp, VTT-Parser, JSON-LD, Seitentext
+  extract/           yt-dlp, VTT-Parser, JSON-LD, Seitentext, Foto-Vision
   transcribe/        faster-whisper (lokal) | Gemini
   llm/               Prompt-Aufbau, Gemini, Rezept-Schema
   notion/            Client, Spalten-Zuordnung, Blöcke, Upsert
-  jobs/              SQLite-Queue, Worker, Pipeline
+  jobs/              SQLite-Queue, Worker, Pipeline, Foto-Ablage
   web/               PWA ohne Build-Schritt
 prompts/recipe.de.md ► dein Prompt
 config/              notion-mapping.json, cookies.txt, ts-serve.json

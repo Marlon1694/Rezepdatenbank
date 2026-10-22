@@ -1,4 +1,6 @@
+import { readFile } from "node:fs/promises";
 import { getNotion } from "./client.ts";
+import { mimeForFile } from "../lib/images.ts";
 import type { GeneratedImage } from "../llm/image.ts";
 
 /** Ein Titelbild sollte nicht groesser sein als noetig. */
@@ -50,6 +52,40 @@ export async function fetchThumbnail(url: string): Promise<GeneratedImage | unde
       `[titelbild] Vorschaubild übersprungen: ${
         err instanceof Error ? err.message : String(err)
       }`,
+    );
+    return undefined;
+  }
+}
+
+/**
+ * Nimmt ein bereits hochgeladenes Foto als Titelbild.
+ *
+ * Anders als beim Vorschaubild einer Website gibt es hier nichts abzurufen -
+ * die Datei liegt auf der Platte. Geprueft wird trotzdem: Ein Bild, das Notion
+ * ablehnt, soll nicht den ganzen Job mitreissen.
+ */
+export async function readLocalImage(path: string): Promise<GeneratedImage | undefined> {
+  try {
+    const mimeType = mimeForFile(path);
+    if (!mimeType) {
+      console.warn(`[titelbild] Format von "${path}" wird nicht unterstützt.`);
+      return undefined;
+    }
+
+    const data = await readFile(path);
+    if (!data.length) return undefined;
+    if (data.length > MAX_BYTES) {
+      console.warn(
+        `[titelbild] Foto ist mit ${Math.round(data.length / 1024 / 1024)} MB zu groß.`,
+      );
+      return undefined;
+    }
+
+    console.log(`[titelbild] Foto übernommen (${Math.round(data.length / 1024)} kB)`);
+    return { data, mimeType };
+  } catch (err) {
+    console.warn(
+      `[titelbild] Foto übersprungen: ${err instanceof Error ? err.message : String(err)}`,
     );
     return undefined;
   }

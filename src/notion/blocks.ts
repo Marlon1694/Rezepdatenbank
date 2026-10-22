@@ -51,6 +51,17 @@ export function chunkText(value: string, size = NOTION_TEXT_LIMIT): string[] {
 export interface BlockOptions {
   sourceUrl: string;
   sourceTitle?: string;
+  /**
+   * Bei Fotos: Woher das Rezept stammt, im Klartext. Es gibt keine Adresse,
+   * auf die man klicken koennte.
+   */
+  sourceLabel?: string;
+  /**
+   * Gesetzt, wenn die KI Luecken gefuellt oder das Rezept anhand eines Bildes
+   * entwickelt hat. Steht als Warnung ganz oben - wer das Rezept spaeter
+   * aufschlaegt, soll nicht raten muessen, was davon belegt ist.
+   */
+  aiNotice?: string;
   /** Original-Transkript; landet zugeklappt am Seitenende zum Nachpruefen. */
   transcript?: string;
   /** Wie der Text gewonnen wurde - hilft beim Einschaetzen der Qualitaet. */
@@ -66,15 +77,33 @@ export function buildRecipeBlocks(recipe: Recipe, opts: BlockOptions): Block[] {
   const blocks: Block[] = [];
 
   // ── Quelle ─────────────────────────────────────────────────────────────────
+  //
+  // Ein Foto hat keine Adresse. Notion nimmt in einem Link auch nur http(s)
+  // entgegen - ein "foto://..." wuerde die ganze Seite scheitern lassen.
+  const klickbar = /^https?:\/\//i.test(opts.sourceUrl);
   blocks.push({
     object: "block",
     type: "callout",
     callout: {
-      icon: { type: "emoji", emoji: "🔗" },
+      icon: { type: "emoji", emoji: klickbar ? "🔗" : "📷" },
       color: "gray_background",
-      rich_text: link(opts.sourceTitle?.trim() || opts.sourceUrl, opts.sourceUrl),
+      rich_text: klickbar
+        ? link(opts.sourceTitle?.trim() || opts.sourceUrl, opts.sourceUrl)
+        : text(opts.sourceLabel?.trim() || opts.sourceTitle?.trim() || "Eigenes Foto"),
     },
   });
+
+  if (opts.aiNotice?.trim()) {
+    blocks.push({
+      object: "block",
+      type: "callout",
+      callout: {
+        icon: { type: "emoji", emoji: "🤖" },
+        color: "yellow_background",
+        rich_text: text(opts.aiNotice.trim()),
+      },
+    });
+  }
 
   if (recipe.zeit_text.trim() && !opts.hasTimeProperty) {
     blocks.push({
