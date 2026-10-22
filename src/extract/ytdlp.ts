@@ -142,7 +142,9 @@ export function explainError(stderr: string): string {
       "— siehe docs/cookies.md. Bei Instagram ist das inzwischen fast immer nötig."
     );
   }
-  if (s.includes("sign in to confirm") || s.includes("bot")) {
+  // "bot" nur als ganzes Wort: "both audio and video streams unavailable" ist
+  // kein Bot-Verdacht, fuehrte aber genau zu dieser Meldung.
+  if (s.includes("sign in to confirm") || /\bbots?\b/.test(s)) {
     return (
       "YouTube hält den Server für einen Bot. Cookies hinterlegen (docs/cookies.md) " +
       "behebt das in aller Regel."
