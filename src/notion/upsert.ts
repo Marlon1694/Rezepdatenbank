@@ -4,13 +4,26 @@ import { buildRecipeBlocks, chunkBlocks } from "./blocks.ts";
 import type { Recipe } from "../llm/recipeSchema.ts";
 import { coverWants, getConfig } from "../config.ts";
 import { generateCoverImage } from "../llm/image.ts";
-import { uploadCover, fetchThumbnail } from "./cover.ts";
+import { uploadCover, fetchThumbnail, readLocalImage } from "./cover.ts";
 
 export interface UpsertInput {
   recipe: Recipe;
+  /** Leer bei Fotos: Dort gibt es keine Adresse. */
   sourceUrl: string;
   /** Vorschaubild der Quelle - bevorzugte Herkunft des Titelbildes. */
   thumbnailUrl?: string;
+  /** Lokales Foto als Titelbild. Geht dem Vorschaubild vor. */
+  coverFile?: string;
+  /**
+   * Bekannte Seite, die ersetzt werden soll. Fotos haben keine Quell-URL, ueber
+   * die man sie wiederfinden koennte - beim zweiten Anlauf desselben Jobs waere
+   * das Ergebnis sonst eine zweite Seite statt einer aktualisierten.
+   */
+  existingPageId?: string;
+  /** Klartext-Herkunft fuer Fotos, z.B. "Eigenes Foto (2 Bilder)". */
+  sourceLabel?: string;
+  /** Hinweis, wenn die KI ergaenzt hat. */
+  aiNotice?: string;
   sourceTitle?: string;
   transcript?: string;
   transcriptSource?: string;
@@ -89,7 +102,8 @@ export async function upsertRecipe(input: UpsertInput): Promise<UpsertResult> {
   // stehendes Rezept wieder auf "Ausprobieren" zurueck.
   const existingId = input.dryRun
     ? undefined
-    : await findExistingPage(input.sourceUrl, mapping);
+    : (input.existingPageId ??
+      (input.sourceUrl ? await findExistingPage(input.sourceUrl, mapping) : undefined));
 
   const { properties, skipped } = buildProperties(input.recipe, schema, {
     sourceUrl: input.sourceUrl,
@@ -101,6 +115,8 @@ export async function upsertRecipe(input: UpsertInput): Promise<UpsertResult> {
   const blocks = buildRecipeBlocks(input.recipe, {
     sourceUrl: input.sourceUrl,
     sourceTitle: input.sourceTitle,
+    sourceLabel: input.sourceLabel,
+    aiNotice: input.aiNotice,
     transcript: input.transcript,
     transcriptSource: input.transcriptSource,
     hasTimeProperty: Boolean(findProperty(schema.properties, "zeit", mapping)),
@@ -117,13 +133,18 @@ export async function upsertRecipe(input: UpsertInput): Promise<UpsertResult> {
     const want = coverWants(cfg.coverSource);
     let image;
 
-    if (want.thumbnail && input.thumbnailUrl) {
+    // Ein eigenes Foto des Gerichts ist das beste Titelbild, das es geben kann:
+    // Es zeigt genau dieses Rezept, nicht eine Nachbildung davon.
+    if (want.thumbnail && input.coverFile) {
+      image = await readLocalImage(input.coverFile);
+    }
+    if (!image && want.thumbnail && input.thumbnailUrl) {
       image = await fetchThumbnail(input.thumbnailUrl);
     }
     if (!image && want.ai) {
       image = await generateCoverImage(input.recipe);
     }
-    if (!image && want.thumbnail && !want.ai && !input.thumbnailUrl) {
+    if (!image && want.thumbnail && !want.ai && !input.thumbnailUrl && !input.coverFile) {
       console.log("[titelbild] die Quelle liefert kein Vorschaubild.");
     }
 

@@ -248,7 +248,9 @@ export function buildProperties(
     skipped.push("zeit");
   }
 
-  assign("quelle", opts.sourceUrl);
+  // Fotos haben keine Adresse. Ein leerer Wert waere sonst als fehlendes Feld
+  // gemeldet worden, obwohl es schlicht nichts einzutragen gibt.
+  if (opts.sourceUrl) assign("quelle", opts.sourceUrl);
   assign("portionen", recipe.portionen);
   assign("kueche", recipe.kueche);
   assign("schwierigkeit", recipe.schwierigkeit);

@@ -5,11 +5,23 @@ import { randomUUID } from "node:crypto";
 import { getConfig } from "../config.ts";
 import type { Recipe } from "../llm/recipeSchema.ts";
 
-export type JobStatus = "queued" | "running" | "done" | "failed";
+/**
+ * "draft" ist die Zwischenstufe eines Foto-Jobs: Die Zeile existiert schon
+ * (ihre ID benennt den Ablageordner), die Bilder sind aber noch nicht alle da.
+ * Der Worker nimmt nur "queued" - ein Entwurf kann also nicht halbfertig
+ * losrennen.
+ */
+export type JobStatus = "draft" | "queued" | "running" | "done" | "failed";
+
+/** Woher das Rezept kommt: ein Link oder hochgeladene Fotos. */
+export type JobKind = "link" | "foto";
 
 export interface Job {
   id: string;
+  kind: JobKind;
   url: string;
+  /** Nur bei kind="foto": Dateinamen unter data/uploads/<id>/, in Reihenfolge. */
+  photos: string[];
   status: JobStatus;
   step: string;
   error: string | null;
@@ -28,7 +40,9 @@ export interface Job {
 
 interface Row {
   id: string;
+  kind: JobKind;
   url: string;
+  photos_json: string | null;
   status: JobStatus;
   step: string;
   error: string | null;
@@ -57,7 +71,9 @@ function connect(): Database.Database {
   db.exec(`
     CREATE TABLE IF NOT EXISTS jobs (
       id              TEXT PRIMARY KEY,
-      url             TEXT NOT NULL,
+      kind            TEXT NOT NULL DEFAULT 'link',
+      url             TEXT NOT NULL DEFAULT '',
+      photos_json     TEXT,
       status          TEXT NOT NULL,
       step            TEXT NOT NULL DEFAULT '',
       error           TEXT,
@@ -76,13 +92,42 @@ function connect(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_jobs_status  ON jobs(status);
   `);
+  migrate(db);
   return db;
+}
+
+/**
+ * Nachtraegliche Spalten fuer bestehende Datenbanken.
+ *
+ * CREATE TABLE IF NOT EXISTS laesst eine vorhandene Tabelle unveraendert - wer
+ * schon Jobs erfasst hat, bekaeme die neuen Spalten sonst nie. Deshalb hier
+ * einzeln nachziehen, was fehlt.
+ */
+function migrate(handle: Database.Database): void {
+  const vorhanden = new Set(
+    (handle.prepare(`PRAGMA table_info(jobs)`).all() as Array<{ name: string }>).map(
+      (c) => c.name,
+    ),
+  );
+  const nachtraeglich: Array<[string, string]> = [
+    ["kind", `ALTER TABLE jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'link'`],
+    ["photos_json", `ALTER TABLE jobs ADD COLUMN photos_json TEXT`],
+  ];
+  for (const [spalte, sql] of nachtraeglich) {
+    if (!vorhanden.has(spalte)) {
+      handle.exec(sql);
+      console.log(`[jobs] Spalte "${spalte}" ergaenzt.`);
+    }
+  }
 }
 
 function toJob(row: Row): Job {
   return {
     id: row.id,
+    // Alte Zeilen haben die Spalte nicht - die stammen alle aus der Link-Zeit.
+    kind: row.kind ?? "link",
     url: row.url,
+    photos: row.photos_json ? (JSON.parse(row.photos_json) as string[]) : [],
     status: row.status,
     step: row.step,
     error: row.error,
@@ -101,17 +146,55 @@ function toJob(row: Row): Job {
 }
 
 export function createJob(url: string): Job {
+  return insert({ kind: "link", url, photos: [] });
+}
+
+/**
+ * Ein Foto-Job wird in zwei Schritten angelegt: erst die Zeile (fuer die ID,
+ * die den Ablageordner benennt), dann die Dateinamen. Deshalb darf er ohne
+ * Fotos entstehen - eingereiht wird er erst mit setPhotos().
+ */
+export function createPhotoJob(): Job {
+  return insert({ kind: "foto", url: "", photos: [], status: "draft" });
+}
+
+function insert(opts: {
+  kind: JobKind;
+  url: string;
+  photos: string[];
+  status?: JobStatus;
+}): Job {
   const now = new Date().toISOString();
   const id = randomUUID();
+  const status = opts.status ?? "queued";
   connect()
     .prepare(
-      `INSERT INTO jobs (id, url, status, step, created_at, updated_at)
-       VALUES (?, ?, 'queued', 'Wartet', ?, ?)`,
+      `INSERT INTO jobs (id, kind, url, photos_json, status, step, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, url, now, now);
+    .run(
+      id,
+      opts.kind,
+      opts.url,
+      opts.photos.length ? JSON.stringify(opts.photos) : null,
+      status,
+      status === "draft" ? "Fotos werden hochgeladen" : "Wartet",
+      now,
+      now,
+    );
   const job = getJob(id);
   if (!job) throw new Error("Job konnte nicht angelegt werden.");
   return job;
+}
+
+/** Schliesst einen Foto-Job ab: Dateinamen eintragen und einreihen. */
+export function queuePhotoJob(id: string, photos: string[]): void {
+  connect()
+    .prepare(
+      `UPDATE jobs SET photos_json = ?, status = 'queued', step = 'Wartet', updated_at = ?
+       WHERE id = ?`,
+    )
+    .run(JSON.stringify(photos), new Date().toISOString(), id);
 }
 
 export function getJob(id: string): Job | undefined {
@@ -121,7 +204,9 @@ export function getJob(id: string): Job | undefined {
 
 export function listJobs(limit = 50): Job[] {
   const rows = connect()
-    .prepare(`SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?`)
+    .prepare(
+      `SELECT * FROM jobs WHERE status != 'draft' ORDER BY created_at DESC LIMIT ?`,
+    )
     .all(limit) as Row[];
   return rows.map(toJob);
 }
@@ -193,6 +278,18 @@ export function requeueStaleJobs(): number {
     .prepare(`UPDATE jobs SET status = 'queued', step = 'Wartet' WHERE status = 'running'`)
     .run();
   return changes;
+}
+
+/**
+ * Entwuerfe, bei denen das Hochladen abgebrochen wurde. Sie tauchen nirgends
+ * auf und wuerden sonst samt Bildern liegen bleiben.
+ */
+export function staleDrafts(olderThanMinutes = 60): Job[] {
+  const grenze = new Date(Date.now() - olderThanMinutes * 60_000).toISOString();
+  const rows = connect()
+    .prepare(`SELECT * FROM jobs WHERE status = 'draft' AND created_at < ?`)
+    .all(grenze) as Row[];
+  return rows.map(toJob);
 }
 
 export function closeDb(): void {

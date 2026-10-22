@@ -41,6 +41,7 @@ async function api(path, options = {}) {
 function showSetup(message) {
   $("setup").hidden = false;
   $("submit").hidden = true;
+  $("photoCard").hidden = true;
   $("listSection").hidden = true;
   const err = $("setupError");
   err.hidden = !message;
@@ -53,6 +54,20 @@ function showApp() {
   $("submit").hidden = false;
   $("listSection").hidden = false;
   refresh();
+  checkPhotoSupport();
+}
+
+/* Fotos brauchen Gemini. Fehlt der Key, bleibt die Karte weg - besser als ein
+   Fehler, der erst nach dem Hochladen kommt. */
+async function checkPhotoSupport() {
+  try {
+    const res = await fetch("/api/health");
+    const health = await res.json();
+    $("photoCard").hidden = !health.fotos;
+    if (health.maxPhotos) maxPhotos = health.maxPhotos;
+  } catch {
+    $("photoCard").hidden = true;
+  }
 }
 
 $("saveToken").addEventListener("click", async () => {
@@ -128,6 +143,168 @@ $("pasteBtn").addEventListener("click", async () => {
   }
 });
 
+/* ── Fotos ────────────────────────────────────────────────────────────────── */
+
+/* Die lange Kante, auf die verkleinert wird. Gemini braucht keine 12 Megapixel,
+   um eine Buchseite zu lesen - und über die VPN zählt jedes Megabyte. Ein
+   iPhone-Foto schrumpft damit von rund 3 MB auf gut 300 kB. */
+const MAX_EDGE = 1800;
+const JPEG_QUALITY = 0.85;
+
+let photos = [];      // { blob, url, name }
+let maxPhotos = 6;
+
+/* Verkleinert ein Bild im Browser. Schlägt das fehl - etwa weil iOS ein HEIC
+   nicht in den Canvas lässt - geht die Originaldatei raus. Lieber ein großer
+   Upload als gar keiner. */
+async function shrink(file) {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const faktor = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+
+    if (faktor === 1 && file.size < 1_500_000) {
+      bitmap.close?.();
+      return file;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * faktor);
+    canvas.height = Math.round(bitmap.height * faktor);
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", JPEG_QUALITY));
+    if (!blob) return file;
+    // Nur übernehmen, wenn es wirklich kleiner wurde.
+    return blob.size < file.size ? blob : file;
+  } catch {
+    return file;
+  }
+}
+
+function renderThumbs() {
+  const box = $("thumbs");
+  box.innerHTML = "";
+  box.hidden = photos.length === 0;
+  $("photoSubmit").hidden = photos.length === 0;
+  $("photoSubmit").textContent =
+    photos.length > 1 ? `Rezept aus ${photos.length} Fotos erstellen` : "Rezept aus Foto erstellen";
+
+  photos.forEach((foto, i) => {
+    const el = document.createElement("div");
+    el.className = "thumb";
+
+    const img = document.createElement("img");
+    img.src = foto.url;
+    img.alt = `Foto ${i + 1}`;
+    el.appendChild(img);
+
+    // Bei mehrseitigen Rezepten zählt die Reihenfolge - also sichtbar machen.
+    const nr = document.createElement("span");
+    nr.className = "thumb-nr";
+    nr.textContent = String(i + 1);
+    el.appendChild(nr);
+
+    const del = document.createElement("button");
+    del.className = "thumb-del";
+    del.type = "button";
+    del.title = "Entfernen";
+    del.setAttribute("aria-label", `Foto ${i + 1} entfernen`);
+    del.textContent = "✕";
+    del.addEventListener("click", () => {
+      URL.revokeObjectURL(foto.url);
+      photos.splice(i, 1);
+      renderThumbs();
+    });
+    el.appendChild(del);
+
+    box.appendChild(el);
+  });
+}
+
+async function addFiles(fileList) {
+  const msg = $("photoMsg");
+  const dateien = Array.from(fileList || []);
+  if (!dateien.length) return;
+
+  const platz = maxPhotos - photos.length;
+  if (platz <= 0) {
+    msg.hidden = false;
+    msg.className = "msg err";
+    msg.textContent = `Mehr als ${maxPhotos} Fotos nimmt der Server nicht an.`;
+    return;
+  }
+
+  msg.hidden = false;
+  msg.className = "msg";
+  msg.textContent = "Bilder werden vorbereitet …";
+
+  for (const file of dateien.slice(0, platz)) {
+    const blob = await shrink(file);
+    photos.push({ blob, url: URL.createObjectURL(blob), name: file.name || "foto.jpg" });
+  }
+
+  if (dateien.length > platz) {
+    msg.className = "msg err";
+    msg.textContent = `Nur die ersten ${platz} Bilder übernommen (Grenze: ${maxPhotos}).`;
+  } else {
+    msg.hidden = true;
+  }
+  renderThumbs();
+}
+
+$("cameraBtn").addEventListener("click", () => $("cameraInput").click());
+$("pickBtn").addEventListener("click", () => $("pickInput").click());
+
+for (const id of ["cameraInput", "pickInput"]) {
+  $(id).addEventListener("change", async (e) => {
+    await addFiles(e.target.files);
+    // Zurücksetzen, sonst löst dasselbe Bild beim zweiten Mal kein Ereignis aus.
+    e.target.value = "";
+  });
+}
+
+$("photoSubmit").addEventListener("click", async () => {
+  if (!photos.length) return;
+  const msg = $("photoMsg");
+  const btn = $("photoSubmit");
+
+  btn.disabled = true;
+  msg.hidden = false;
+  msg.className = "msg";
+  msg.textContent = "Fotos werden hochgeladen …";
+
+  const form = new FormData();
+  photos.forEach((foto, i) => {
+    // Der Server vergibt den Dateinamen selbst und nutzt nur die Endung - der
+    // Name hier dient bloß dazu, dass eine mitkommt.
+    const endung = /\.(jpe?g|png|webp|heic|heif|gif)$/i.test(foto.name) ? "" : ".jpg";
+    form.append("foto", foto.blob, `${i + 1}-${foto.name}${endung}`);
+  });
+
+  try {
+    const res = await fetch("/api/jobs/foto", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+    photos.forEach((f) => URL.revokeObjectURL(f.url));
+    photos = [];
+    renderThumbs();
+    msg.className = "msg ok";
+    msg.textContent = `${data.photos} Foto(s) eingereiht. Das Lesen dauert einen Moment.`;
+    refresh();
+  } catch (err) {
+    msg.className = "msg err";
+    msg.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 $("refreshBtn").addEventListener("click", refresh);
 
 /* ── Verlauf ──────────────────────────────────────────────────────────────── */
@@ -160,9 +337,12 @@ function renderJobs(jobs) {
     el.className = "job";
     el.tabIndex = 0;
 
-    const title = job.recipeTitle || job.title || job.url;
+    const istFoto = job.kind === "foto";
+    const title =
+      job.recipeTitle || job.title || (istFoto ? `📷 ${job.photos.length} Foto(s)` : job.url);
     const meta = [];
     if (job.platform) meta.push(job.platform);
+    else if (istFoto) meta.push("Foto");
     if (job.status === "running" && job.step) meta.push(job.step);
     if (job.status === "done") {
       if (job.textSource) meta.push(job.textSource);
@@ -246,10 +426,41 @@ function input(value, placeholder = "") {
   return i;
 }
 
+/* Bilder hinter dem Token: <img src> schickt keine Authorization-Kopfzeile,
+   deshalb selbst holen und als Objekt-URL einhängen.
+
+   Der umschließende Link bekommt dieselbe Objekt-URL. Zeigte er weiter auf
+   /api/..., käme beim Antippen nur ein 401 als JSON — ein toter Link. */
+async function loadProtectedImage(img, anchor, url) {
+  try {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const objektUrl = URL.createObjectURL(blob);
+    img.src = objektUrl;
+    if (anchor) anchor.href = objektUrl;
+    // Nicht nach dem Laden freigeben: Die Adresse wird noch gebraucht, solange
+    // die Ansicht offen ist. closeDetail() räumt auf.
+    objektUrls.push(objektUrl);
+  } catch {
+    /* Ohne Vorschau ist die Ansicht immer noch brauchbar. */
+  }
+}
+
+/* Objekt-URLs der gerade offenen Detailansicht. */
+let objektUrls = [];
+
+function releaseObjektUrls() {
+  objektUrls.forEach((u) => URL.revokeObjectURL(u));
+  objektUrls = [];
+}
+
 async function openDetail(id) {
   openJobId = id;
   const job = await api(`/api/jobs/${id}`);
   const box = $("detail");
+  // Beim Wechsel auf einen anderen Job die Bilder des vorigen freigeben.
+  releaseObjektUrls();
   box.innerHTML = "";
 
   const link = $("notionLink");
@@ -257,15 +468,42 @@ async function openDetail(id) {
   if (job.notionPageUrl) link.href = job.notionPageUrl;
 
   const head = document.createElement("div");
+  // Ein Foto hat keine Adresse - dort wäre der Link nur ein toter Platzhalter.
+  const herkunft =
+    job.kind === "foto"
+      ? `<p class="muted small">📷 Eigenes Foto${
+          job.photos.length > 1 ? ` · ${job.photos.length} Bilder` : ""
+        }</p>`
+      : `<p class="muted small">
+           <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener">${escapeHtml(job.url)}</a>
+         </p>`;
   head.innerHTML = `
     <h2>${escapeHtml(job.recipe ? `${job.recipe.emoji} ${job.recipe.titel}` : job.title || "Ohne Titel")}</h2>
-    <p class="muted small">
-      <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener">${escapeHtml(job.url)}</a>
-    </p>
+    ${herkunft}
     ${job.error ? `<p class="error">${escapeHtml(job.error)}</p>` : ""}
     ${!job.recipe && !job.error ? `<p class="muted">${escapeHtml(job.step || "Läuft …")}</p>` : ""}
   `;
   box.appendChild(head);
+
+  // Die Vorlage mit anzeigen: Stimmt etwas am Rezept nicht, ist die erste
+  // Frage immer, ob das Bild überhaupt lesbar war.
+  if (job.kind === "foto" && job.photos.length) {
+    const galerie = document.createElement("div");
+    galerie.className = "thumbs";
+    job.photos.forEach((_, i) => {
+      const a = document.createElement("a");
+      a.className = "thumb";
+      a.href = `/api/jobs/${job.id}/fotos/${i}`;
+      a.target = "_blank";
+      a.rel = "noopener";
+      const img = document.createElement("img");
+      img.alt = `Foto ${i + 1}`;
+      loadProtectedImage(img, a, a.href);
+      a.appendChild(img);
+      galerie.appendChild(a);
+    });
+    box.appendChild(galerie);
+  }
 
   if (job.recipe) box.appendChild(buildEditor(job));
 
@@ -469,6 +707,7 @@ function field(el) {
 }
 
 function closeDetail() {
+  releaseObjektUrls();
   $("overlay").hidden = true;
   document.body.style.overflow = "";
   openJobId = null;

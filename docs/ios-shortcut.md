@@ -113,3 +113,34 @@ curl -X POST http://192.168.1.50:3000/api/jobs \
   -H "Content-Type: application/json" \
   -d '{"url":"https://www.youtube.com/watch?v=..."}'
 ```
+
+---
+
+## Fotos: Kurzbefehl zum Teilen aus der Fotos-App
+
+Für abfotografierte Rezepte reicht die Web-App völlig: Dort öffnest du
+**📷 Rezept abfotografieren** und tippst auf **Kamera**. Das ist der kürzeste Weg
+und verkleinert die Bilder vorher automatisch.
+
+Praktisch wird ein eigener Kurzbefehl nur, wenn du **aus der Fotos-App heraus**
+teilen willst — etwa bei einem Bildschirmfoto, das schon in der Mediathek liegt.
+
+1. **Kurzbefehle** → **+** → Namen vergeben, z.B. *Rezept aus Foto*
+2. **Info-Symbol** → **Bei Teilen-Blatt anzeigen** einschalten.
+   Bei *Teilen-Blatt-Typen* nur **Bilder** aktiviert lassen.
+3. Aktion **„Bild anpassen"** hinzufügen → Breite **1800**, Höhe automatisch.
+   Ohne diesen Schritt lädt ein iPhone-Foto mehrere Megabyte über die VPN hoch.
+4. Aktion **„Inhalte der URL abrufen"** hinzufügen und aufklappen:
+   - **URL**: `http://192.168.1.50:3000/api/jobs/foto`
+   - **Methode**: `POST`
+   - **Header**: Schlüssel `Authorization`, Wert `Bearer DEIN_TOKEN`
+   - **Anfragetext**: `Formular`
+   - Feld hinzufügen → Typ auf **Datei** stellen → Schlüssel `foto`,
+     Wert = die *angepasste Bildausgabe* aus Schritt 3
+
+Mehrere Bilder in einem Rezept gehen so nicht zuverlässig — dafür nimmst du die
+Web-App, dort wählst du einfach mehrere Fotos auf einmal aus.
+
+> **HEIC:** iPhones speichern standardmäßig in diesem Format. Der Server nimmt es
+> an. Falls es doch einmal klemmt, hilft in den Kurzbefehlen die Aktion
+> **„Bild konvertieren"** nach JPEG.

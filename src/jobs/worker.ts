@@ -1,5 +1,6 @@
-import { nextQueuedJob, updateJob, requeueStaleJobs } from "./store.ts";
-import { runPipeline } from "./pipeline.ts";
+import { nextQueuedJob, updateJob, requeueStaleJobs, staleDrafts, deleteJob } from "./store.ts";
+import { runPipeline, runPhotoPipeline } from "./pipeline.ts";
+import { photoPaths, removePhotos } from "./uploads.ts";
 
 /**
  * In-Process-Worker mit Nebenlaeufigkeit 1.
@@ -19,10 +20,24 @@ async function processOne(): Promise<boolean> {
 
   const startedAt = Date.now();
   updateJob(job.id, { status: "running", step: "Startet", error: null });
-  console.log(`[worker] ${job.id} -> ${job.url}`);
+  console.log(
+    `[worker] ${job.id} -> ${job.kind === "foto" ? `${job.photos.length} Foto(s)` : job.url}`,
+  );
 
   try {
-    const result = await runPipeline(job.url, (step) => updateJob(job.id, { step }));
+    const onProgress = (step: string) => updateJob(job.id, { step });
+
+    const result =
+      job.kind === "foto"
+        ? await runPhotoPipeline({
+            paths: photoPaths(job.id, job.photos),
+            // Beim zweiten Anlauf dieselbe Notion-Seite ersetzen, statt eine
+            // zweite anzulegen: Ein Foto hat keine Quell-URL, ueber die der
+            // Duplikat-Check sie wiederfinden koennte.
+            existingPageId: job.notionPageId ?? undefined,
+            onProgress,
+          })
+        : await runPipeline(job.url, onProgress);
 
     updateJob(job.id, {
       status: "done",
@@ -71,6 +86,7 @@ export function startWorker(): void {
   if (requeued > 0) {
     console.log(`[worker] ${requeued} unterbrochene(r) Job(s) wieder eingereiht.`);
   }
+  void cleanDrafts();
   timer = setInterval(() => void loop(), POLL_INTERVAL_MS);
   timer.unref?.();
   void loop();
@@ -79,6 +95,19 @@ export function startWorker(): void {
 export function stopWorker(): void {
   if (timer) clearInterval(timer);
   timer = undefined;
+}
+
+/**
+ * Abgebrochene Uploads wegraeumen. Ein Entwurf entsteht, sobald das erste Byte
+ * ankommt; bricht die Verbindung mitten im Hochladen ab, bleibt er samt
+ * Bildern liegen und taucht nirgends mehr auf.
+ */
+async function cleanDrafts(): Promise<void> {
+  for (const job of staleDrafts()) {
+    await removePhotos(job.id).catch(() => {});
+    deleteJob(job.id);
+    console.log(`[worker] abgebrochenen Foto-Upload ${job.id} entfernt.`);
+  }
 }
 
 /** Nach dem Einreihen sofort anstossen, statt aufs naechste Intervall zu warten. */

@@ -19,11 +19,21 @@ export function resetGemini(): void {
   client = undefined;
 }
 
+/** Ein Bild, so wie Gemini es entgegennimmt. */
+export interface InlineImage {
+  mimeType: string;
+  data: Buffer;
+}
+
 export interface GenerateJsonOptions {
   prompt: string;
   schema: unknown;
+  /** Bilder, die dem Prompt vorangestellt werden. Leer = reine Textanfrage. */
+  images?: InlineImage[];
   /** Free-Tier laeuft schnell in 429, und 503 bei Modellandrang ist haeufig. */
   maxAttempts?: number;
+  /** Ueberschreibt das Hauptmodell - fuer Bilder ggf. ein eigenes. */
+  model?: string;
 }
 
 const RETRYABLE = [429, 500, 502, 503, 504];
@@ -81,10 +91,24 @@ function explain(status: number | undefined, model: string, raw: string): string
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Ein einzelner Anlauf gegen ein bestimmtes Modell. */
-async function callOnce(model: string, prompt: string, schema: unknown): Promise<unknown> {
+async function callOnce(
+  model: string,
+  prompt: string,
+  schema: unknown,
+  images: InlineImage[] = [],
+): Promise<unknown> {
+  // Bilder vor den Text: Das Modell soll erst sehen, worum es geht, und dann
+  // lesen, was es damit tun soll.
+  const parts = [
+    ...images.map((img) => ({
+      inlineData: { mimeType: img.mimeType, data: img.data.toString("base64") },
+    })),
+    { text: prompt },
+  ];
+
   const response = await getGemini().models.generateContent({
     model,
-    contents: prompt,
+    contents: [{ role: "user", parts }],
     config: {
       responseMimeType: "application/json",
       responseJsonSchema: schema,
@@ -107,6 +131,8 @@ async function callOnce(model: string, prompt: string, schema: unknown): Promise
 export async function generateJson({
   prompt,
   schema,
+  images = [],
+  model: override,
   maxAttempts = BACKOFF_SECONDS.length + 1,
 }: GenerateJsonOptions): Promise<unknown> {
   const cfg = getConfig();
@@ -114,7 +140,8 @@ export async function generateJson({
   // Erst das eingestellte Modell mit Wiederholungen, danach - falls konfiguriert -
   // ein einzelner Anlauf mit dem Ausweichmodell. Ist eines ueberlastet, ist das
   // andere es meist nicht.
-  const models = [cfg.geminiModel, cfg.geminiFallbackModel].filter(
+  const haupt = override || cfg.geminiModel;
+  const models = [haupt, cfg.geminiFallbackModel].filter(
     (m, i, all): m is string => Boolean(m) && all.indexOf(m) === i,
   );
 
@@ -131,7 +158,7 @@ export async function generateJson({
 
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
-        return await callOnce(model, prompt, schema);
+        return await callOnce(model, prompt, schema, images);
       } catch (err) {
         if (istHaupt) primaryError = err;
         else fallbackError = err;
@@ -157,7 +184,7 @@ export async function generateJson({
   }
 
   throw new Error(
-    describeFailure(cfg.geminiModel, primaryError, cfg.geminiFallbackModel, fallbackError),
+    describeFailure(haupt, primaryError, cfg.geminiFallbackModel, fallbackError),
   );
 }
 

@@ -5,11 +5,15 @@ nächsten Rezept — kein Neustart nötig.
 
 Die Abschnitte `{{...}}` werden vom Programm ersetzt. Bitte stehen lassen.
 
+`{{MODUS}}` bleibt bei Videos leer. Bei Fotos steht dort, ob das Rezept exakt
+abgetippt, nur in den Lücken ergänzt oder anhand des Bildes neu entwickelt werden
+soll. Fehlt der Platzhalter, hängt das Programm den Abschnitt am Ende an.
+
 ---
 
-Ich gebe dir gleich ein Transkript oder eine Beschreibung eines Kochvideos. Bitte
-erstelle mir daraus eine strukturierte Rezept-Karte für meine Notion-Datenbank nach
-exakt diesem Schema:
+Ich gebe dir gleich ein Transkript, eine Beschreibung eines Kochvideos oder die
+Abschrift eines abfotografierten Rezepts. Bitte erstelle mir daraus eine
+strukturierte Rezept-Karte für meine Notion-Datenbank nach exakt diesem Schema:
 
 1. **Titel:** Name des Gerichts mit einem passenden Koch-Emoji.
 2. **Tags:** 3-5 Schlagworte (z.B. Schnell, Vegetarisch, LowCarb).
@@ -17,7 +21,7 @@ exakt diesem Schema:
 4. **Zutatenliste:** Unterteile sie logisch (z.B. 'Hauptzutaten', 'Gewürze'). Nutze die
    exakten Mengenangaben.
 5. **Schritt-für-Schritt Anleitung:** Nummerierte Liste, kurze und prägnante Sätze.
-6. **Pro-Tipp:** Ein spezieller Kniff oder eine Variationsmöglichkeit aus dem Video.
+6. **Pro-Tipp:** Ein spezieller Kniff oder eine Variationsmöglichkeit aus dem Material.
 
 ## Ausgaberegeln
 
@@ -37,9 +41,10 @@ exakt diesem Schema:
   die Umrechnung in Klammern an — `1 cup Mehl (ca. 120 g)`, `350 °F (175 °C)`,
   `2 tbsp Öl (ca. 30 ml)`. So geht nichts verloren und du kannst trotzdem direkt
   danach kochen.
-- **Nichts erfinden.** Was im Video nicht vorkommt, wird nicht ergänzt. Fehlt eine
+- **Nichts erfinden.** Was im Material nicht vorkommt, wird nicht ergänzt. Fehlt eine
   Menge, lass `menge` leer, statt zu raten. Findest du keinen Pro-Tipp im Material,
   lass `pro_tipp` leer — erfinde keinen allgemeinen Kochratschlag.
+  *Ausnahme:* Steht unten ein Abschnitt „Sonderfall“, gilt dort das, was er sagt.
 - **Unsicheres kennzeichnen:** Hast du eine Menge nur aus dem Zusammenhang erschlossen,
   schreib `ca.` davor.
 - **Zutatengruppen:** Nur gruppieren, wenn es das Rezept hergibt. Ein simples Rezept
@@ -48,6 +53,8 @@ exakt diesem Schema:
   keine Nummerierung im Text selbst (die macht Notion).
 
 {{ZUSATZFELDER}}
+
+{{MODUS}}
 
 ## Quelle
 

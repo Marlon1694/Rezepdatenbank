@@ -1,10 +1,22 @@
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
+import fastifyMultipart from "@fastify/multipart";
+import { createReadStream } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import { getConfig } from "./config.ts";
-import { createJob, getJob, listJobs, deleteJob, updateJob } from "./jobs/store.ts";
+import {
+  createJob,
+  createPhotoJob,
+  queuePhotoJob,
+  getJob,
+  listJobs,
+  deleteJob,
+  updateJob,
+} from "./jobs/store.ts";
+import { checkPhoto, savePhoto, removePhotos, photoPaths } from "./jobs/uploads.ts";
+import { mimeForFile } from "./lib/images.ts";
 import { startWorker, nudgeWorker } from "./jobs/worker.ts";
 import { upsertRecipe } from "./notion/upsert.ts";
 import { getDataSourceSchema } from "./notion/client.ts";
@@ -16,6 +28,16 @@ import { coverImageBlocker } from "./llm/image.ts";
 import { cleanUrl, isValidUrl } from "./lib/url.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+/** Fehler mit eigenem HTTP-Status, damit die Upload-Schleife sauber aussteigt. */
+class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 /** Vergleich in konstanter Zeit, damit das Token nicht erraten werden kann. */
 function tokenMatches(provided: string, expected: string): boolean {
@@ -59,6 +81,16 @@ export async function buildApp() {
     },
   );
 
+  // Fotos kommen als multipart - die Grenzen hier sind die letzte Instanz,
+  // auch wenn die Web-App die Bilder vorher schon verkleinert.
+  await app.register(fastifyMultipart, {
+    limits: {
+      fileSize: cfg.maxPhotoBytes,
+      files: cfg.maxPhotosPerJob,
+      fields: 4,
+    },
+  });
+
   app.addHook("onRequest", async (request, reply) => {
     const path = request.url.split("?")[0] ?? "";
     // Die Web-App selbst ist offen - sie fragt das Token beim ersten Start ab.
@@ -83,6 +115,11 @@ export async function buildApp() {
     jsRuntime: await ytdlp.hasJsRuntime(),
     transcribeProvider: cfg.transcribeProvider,
     coverSource: cfg.coverSource,
+    // Ohne Gemini-Key gibt es kein Lesen von Fotos - die Web-App blendet den
+    // Bereich dann aus, statt einen Fehler erst nach dem Hochladen zu zeigen.
+    fotos: Boolean(cfg.geminiApiKey),
+    maxPhotos: cfg.maxPhotosPerJob,
+    maxPhotoBytes: cfg.maxPhotoBytes,
   }));
 
   /** Prueft die Notion-Verbindung und zeigt das erkannte Schema. */
@@ -123,6 +160,113 @@ export async function buildApp() {
     });
   });
 
+  /**
+   * Abfotografiertes Rezept. Die Bilder kommen als multipart, der Job entsteht
+   * erst dann - seine ID benennt den Ablageordner.
+   */
+  app.post("/api/jobs/foto", async (request, reply) => {
+    if (!cfg.geminiApiKey) {
+      return reply.code(503).send({
+        error:
+          "Ohne GEMINI_API_KEY können Fotos nicht gelesen werden. " +
+          "Kostenlos unter aistudio.google.com → „Get API key“.",
+      });
+    }
+    if (!request.isMultipart()) {
+      return reply
+        .code(400)
+        .send({ error: "Die Fotos müssen als multipart/form-data geschickt werden." });
+    }
+
+    const job = createPhotoJob();
+    const namen: string[] = [];
+
+    try {
+      for await (const part of request.parts()) {
+        if (part.type !== "file") continue;
+        if (namen.length >= cfg.maxPhotosPerJob) {
+          throw new HttpError(
+            400,
+            `Höchstens ${cfg.maxPhotosPerJob} Fotos pro Rezept. ` +
+              `Passt ein Rezept nicht auf so viele Seiten, lohnt sich eher ein Link.`,
+          );
+        }
+
+        // Ueberschreitet eine Datei das Limit, bricht @fastify/multipart hier
+        // mit FST_REQ_FILE_TOO_LARGE ab - wir bekommen also gar keinen Puffer
+        // zu sehen, nicht etwa einen halben. Die Meldung uebersetzen wir, denn
+        // "request file too large" sagt nicht, wo die Grenze liegt.
+        let data: Buffer;
+        try {
+          data = await part.toBuffer();
+        } catch (err) {
+          if ((err as { code?: string }).code === "FST_REQ_FILE_TOO_LARGE") {
+            throw new HttpError(
+              413,
+              `„${part.filename}“ überschreitet die Grenze von ` +
+                `${Math.round(cfg.maxPhotoBytes / 1024 / 1024)} MB. ` +
+                `Die Web-App verkleinert Fotos eigentlich vor dem Hochladen — ` +
+                `kam das Bild über einen Kurzbefehl, verkleinere es dort.`,
+            );
+          }
+          throw err;
+        }
+
+        const check = checkPhoto(part.filename ?? "foto.jpg", data.length);
+        if (!check.ok) throw new HttpError(400, check.error);
+
+        namen.push(await savePhoto(job.id, namen.length + 1, check.extension, data));
+      }
+
+      if (!namen.length) {
+        throw new HttpError(400, "Es war kein Foto dabei.");
+      }
+
+      queuePhotoJob(job.id, namen);
+      nudgeWorker();
+
+      return reply.code(202).send({
+        id: job.id,
+        status: "queued",
+        kind: "foto",
+        photos: namen.length,
+        message: `${namen.length} Foto(s) eingereiht. Status unter /api/jobs/${job.id}`,
+      });
+    } catch (err) {
+      // Der Entwurf und die halb hochgeladenen Bilder sollen nicht liegen
+      // bleiben, wenn der Upload scheitert.
+      await removePhotos(job.id).catch(() => {});
+      deleteJob(job.id);
+
+      const status = err instanceof HttpError ? err.status : 400;
+      const message = err instanceof Error ? err.message : String(err);
+      return reply.code(status).send({ error: message });
+    }
+  });
+
+  /** Ein hochgeladenes Foto ausliefern - fuer die Detailansicht der Web-App. */
+  app.get("/api/jobs/:id/fotos/:index", async (request, reply) => {
+    const { id, index } = request.params as { id: string; index: string };
+    const job = getJob(id);
+    if (!job || job.kind !== "foto") {
+      return reply.code(404).send({ error: "Job nicht gefunden." });
+    }
+
+    const n = Number(index);
+    const name = Number.isInteger(n) ? job.photos[n] : undefined;
+    if (!name) return reply.code(404).send({ error: "Foto nicht gefunden." });
+
+    const [pfad] = photoPaths(id, [name]);
+    if (!pfad) return reply.code(404).send({ error: "Foto nicht gefunden." });
+
+    // Nur aus der Liste des Jobs bedienen, nie aus dem Pfad der Anfrage - so
+    // kann keine Nummer irgendwo anders hinzeigen.
+    return reply
+      .type(mimeForFile(name) ?? "application/octet-stream")
+      .header("Cache-Control", "private, max-age=86400")
+      .send(createReadStream(pfad));
+  });
+
   app.get("/api/jobs", async (request) => {
     const query = request.query as { limit?: string };
     const limit = Math.min(Number(query.limit) || 50, 200);
@@ -143,7 +287,10 @@ export async function buildApp() {
 
   app.delete("/api/jobs/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    if (!getJob(id)) return reply.code(404).send({ error: "Job nicht gefunden." });
+    const job = getJob(id);
+    if (!job) return reply.code(404).send({ error: "Job nicht gefunden." });
+    // Sonst blieben die Bilder als Karteileichen im Datenverzeichnis zurueck.
+    if (job.kind === "foto") await removePhotos(id).catch(() => {});
     deleteJob(id);
     return reply.code(204).send();
   });
@@ -178,6 +325,15 @@ export async function buildApp() {
       const result = await upsertRecipe({
         recipe: parsed.data,
         sourceUrl: job.url,
+        // Ohne Quell-URL faende der Duplikat-Check die Seite nicht wieder und
+        // eine Korrektur legte eine zweite an.
+        existingPageId: job.kind === "foto" ? (job.notionPageId ?? undefined) : undefined,
+        sourceLabel:
+          job.kind === "foto"
+            ? job.photos.length > 1
+              ? `Eigenes Foto (${job.photos.length} Bilder)`
+              : "Eigenes Foto"
+            : undefined,
         sourceTitle: job.title ?? undefined,
         transcript: job.transcript ?? undefined,
         transcriptSource: job.textSource ?? undefined,

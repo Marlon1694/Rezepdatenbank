@@ -64,6 +64,19 @@ const ConfigSchema = z.object({
   whisperModel: z.string().default("small"),
   whisperComputeType: z.string().default("int8"),
 
+  /**
+   * Fotos: Wie viele Bilder ein Rezept haben darf und wie gross jedes sein
+   * darf. Ein iPhone-Foto liegt bei 2-4 MB; die Web-App rechnet es vor dem
+   * Hochladen ohnehin kleiner, der Wert ist die Obergrenze fuer alle Wege.
+   */
+  maxPhotosPerJob: z.coerce.number().int().positive().default(6),
+  maxPhotoBytes: z.coerce.number().int().positive().default(12 * 1024 * 1024),
+  /**
+   * Leer = geminiModel. Ein eigenes Modell lohnt nur, wenn das Hauptmodell
+   * keine Bilder kann.
+   */
+  visionModel: z.string().default(""),
+
   freeTextMinChars: z.coerce.number().int().nonnegative().default(600),
   tagsWithHash: bool.default(false),
   /** Wert fuer die Status-Spalte bei NEU angelegten Rezepten. Leer = nicht setzen. */
@@ -123,6 +136,9 @@ export function getConfig(): Config {
     transcribeProvider: process.env.TRANSCRIBE_PROVIDER,
     whisperModel: process.env.WHISPER_MODEL,
     whisperComputeType: process.env.WHISPER_COMPUTE_TYPE,
+    maxPhotosPerJob: process.env.MAX_PHOTOS_PER_JOB,
+    maxPhotoBytes: process.env.MAX_PHOTO_BYTES,
+    visionModel: process.env.VISION_MODEL,
     freeTextMinChars: process.env.FREE_TEXT_MIN_CHARS,
     tagsWithHash: process.env.TAGS_WITH_HASH,
     newRecipeStatus: process.env.NEW_RECIPE_STATUS,
