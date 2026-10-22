@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { getConfig } from "../config.ts";
+import { coverWants, getConfig } from "../config.ts";
 import { getGemini } from "./gemini.ts";
 import type { Recipe } from "./recipeSchema.ts";
 
@@ -99,7 +99,7 @@ async function viaGemini(model: string, prompt: string): Promise<GeneratedImage 
 /** Warum ist kein Titelbild moeglich? Leerer String = alles bereit. */
 export function coverImageBlocker(): string {
   const cfg = getConfig();
-  if (!cfg.coverSource.includes("ai")) return `COVER_SOURCE steht auf "${cfg.coverSource}"`;
+  if (!coverWants(cfg.coverSource).ai) return `COVER_SOURCE steht auf "${cfg.coverSource}"`;
   if (!cfg.imageModel) return "IMAGE_MODEL ist nicht gesetzt";
   if (!cfg.geminiApiKey) return "GEMINI_API_KEY fehlt";
   return "";

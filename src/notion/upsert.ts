@@ -2,7 +2,7 @@ import { getNotion, getDataSourceSchema } from "./client.ts";
 import { buildProperties, findProperty, type Mapping } from "./mapper.ts";
 import { buildRecipeBlocks, chunkBlocks } from "./blocks.ts";
 import type { Recipe } from "../llm/recipeSchema.ts";
-import { getConfig } from "../config.ts";
+import { coverWants, getConfig } from "../config.ts";
 import { generateCoverImage } from "../llm/image.ts";
 import { uploadCover, fetchThumbnail } from "./cover.ts";
 
@@ -114,15 +114,16 @@ export async function upsertRecipe(input: UpsertInput): Promise<UpsertResult> {
   // Gemini-Stufe sieht dafuer kein Kontingent vor.
   let coverId: string | undefined;
   if (!input.dryRun && cfg.coverSource !== "none") {
+    const want = coverWants(cfg.coverSource);
     let image;
 
-    if (cfg.coverSource.startsWith("thumbnail") && input.thumbnailUrl) {
+    if (want.thumbnail && input.thumbnailUrl) {
       image = await fetchThumbnail(input.thumbnailUrl);
     }
-    if (!image && cfg.coverSource.includes("ai")) {
+    if (!image && want.ai) {
       image = await generateCoverImage(input.recipe);
     }
-    if (!image && cfg.coverSource === "thumbnail" && !input.thumbnailUrl) {
+    if (!image && want.thumbnail && !want.ai && !input.thumbnailUrl) {
       console.log("[titelbild] die Quelle liefert kein Vorschaubild.");
     }
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { RecipeSchema } from "../src/llm/recipeSchema.ts";
+import { coverWants } from "../src/config.ts";
 
 process.env.APP_TOKEN ??= "t";
 process.env.NOTION_TOKEN ??= "ntn_t";
@@ -88,5 +89,24 @@ describe("explainImageError", () => {
     const { explainImageError } = await import("../src/llm/image.ts");
     const text = explainImageError(new Error("x".repeat(900)), "m");
     expect(text.length).toBeLessThan(320);
+  });
+});
+
+describe("coverWants", () => {
+  /**
+   * Der Bug, der das hier noetig gemacht hat: Geprueft wurde mit
+   * `coverSource.includes("ai")`. In "thumb-n-ai-l" steckt aber genau diese
+   * Zeichenfolge. Mit COVER_SOURCE=thumbnail wurde deshalb doch das
+   * kostenpflichtige Bildmodell angefragt, sobald kein Vorschaubild da war.
+   */
+  it("haelt thumbnail von der KI-Stufe fern", () => {
+    expect("thumbnail".includes("ai")).toBe(true); // die Falle, schwarz auf weiss
+    expect(coverWants("thumbnail")).toEqual({ thumbnail: true, ai: false });
+  });
+
+  it("deckt die uebrigen Stufen ab", () => {
+    expect(coverWants("ai")).toEqual({ thumbnail: false, ai: true });
+    expect(coverWants("thumbnail+ai")).toEqual({ thumbnail: true, ai: true });
+    expect(coverWants("none")).toEqual({ thumbnail: false, ai: false });
   });
 });

@@ -84,6 +84,25 @@ const ConfigSchema = z.object({
 
 export type Config = z.infer<typeof ConfigSchema>;
 
+export type CoverSource = Config["coverSource"];
+
+/**
+ * Welche Titelbild-Quellen erlaubt sind.
+ *
+ * Hier stand frueher `coverSource.includes("ai")` - und das ist eine Falle:
+ * In "thumb-n-ai-l" steckt die Zeichenfolge "ai". Mit COVER_SOURCE=thumbnail
+ * wurde deshalb doch das (kostenpflichtige) Bildmodell angefragt, sobald kein
+ * Vorschaubild da war. Nur weil IMAGE_MODEL leer war, fiel es nicht auf.
+ *
+ * Deshalb: aufzaehlen statt in Zeichenketten suchen.
+ */
+export function coverWants(source: CoverSource): { thumbnail: boolean; ai: boolean } {
+  return {
+    thumbnail: source === "thumbnail" || source === "thumbnail+ai",
+    ai: source === "ai" || source === "thumbnail+ai",
+  };
+}
+
 let cached: Config | undefined;
 
 export function getConfig(): Config {
