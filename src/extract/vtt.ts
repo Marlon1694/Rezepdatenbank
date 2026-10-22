@@ -64,20 +64,43 @@ function collapse(text: string): string {
 }
 
 /**
- * Grobe Schaetzung, ob ein Text ueberhaupt ein Rezept enthaelt. Verhindert, dass wir
- * uns eine lange Kanal-Werbung als "genug Text" verkaufen und die Transkription
- * ueberspringen.
+ * Grobe Schaetzung, ob ein Text ueberhaupt ein Rezept enthaelt.
+ *
+ * Entscheidend sind ZWEI Dinge, nicht eines: Mengen und Zubereitung. Frueher
+ * genuegten zwei Mengenangaben - damit bestand eine blosse Zutatenliste aus
+ * einer Videobeschreibung den Test, obwohl darin kein einziger Arbeitsschritt
+ * stand. Das Ergebnis war ein Rezept ohne Anleitung, und die Transkription,
+ * die den Fehler behoben haette, lief nie an.
+ *
+ * Mengen allein sind eine Einkaufsliste.
  */
 export function looksLikeRecipe(text: string): boolean {
+  const { mengen, schritte } = recipeSignals(text);
+
   if (text.length < 120) return false;
 
+  // Ohne erkennbare Zubereitung ist es kein Rezept - egal wie viele Mengen
+  // darin stehen. Ein einzelnes Verb kann auch in einer Zutatenliste stehen
+  // ("Salz zum Abschmecken"), deshalb zwei.
+  if (schritte < 2) return false;
+
+  // Zusammen mit Mengenangaben genuegen diese zwei Hinweise; ohne Mengen
+  // braucht es mehr, weil dann nur dieses eine Signal uebrig bleibt.
+  return mengen >= 2 || schritte >= 4;
+}
+
+/** Die Zaehlwerte hinter der Entscheidung - auch fuer das Protokoll nuetzlich. */
+export function recipeSignals(text: string): { mengen: number; schritte: number } {
   const units =
-    /\b(\d+([.,]\d+)?)\s*(g|kg|ml|l|el|tl|prise|prisen|stück|stk|dose|dosen|pkg|packung|cup|cups|tbsp|tsp|oz|lb|pound|ounce)\b/gi;
-  const unitHits = (text.match(units) ?? []).length;
+    /\b(\d+([.,]\d+)?)\s*(g|kg|ml|l|el|tl|msp|prise|prisen|stück|stk|dose|dosen|pkg|packung|bund|zehen?|cup|cups|tbsp|tsp|oz|lb|pound|ounce)\b/gi;
 
+  // Bewusst breit: Ein Pizzateig wird geknetet, gehen gelassen und ausgerollt -
+  // ohne diese Woerter faellt ein vollstaendiges Rezept faelschlich durch.
   const verbs =
-    /\b(anbraten|braten|backen|kochen|rühren|verrühren|schneiden|würfeln|hacken|mischen|vermengen|schwenken|köcheln|marinieren|abschmecken|servieren|erhitzen|bake|fry|stir|chop|simmer|whisk|season)\b/gi;
-  const verbHits = (text.match(verbs) ?? []).length;
+    /\b(anbraten|braten|backen|kochen|garen|duensten|dünsten|anschwitzen|köcheln|koecheln|schmoren|grillen|frittieren|rühren|ruehren|verrühren|verruehren|kneten|falten|formen|ausrollen|schneiden|würfeln|wuerfeln|hacken|reiben|raspeln|mischen|vermengen|unterheben|schwenken|wenden|marinieren|abschmecken|würzen|wuerzen|salzen|pfeffern|servieren|anrichten|erhitzen|aufgießen|aufgiessen|ablöschen|abloeschen|abgießen|abgiessen|pürieren|puerieren|bestreuen|beträufeln|betraeufeln|belegen|füllen|fuellen|bestreichen|ruhen lassen|gehen lassen|abkühlen|abkuehlen|auftauen|vorheizen|bake|fry|stir|chop|simmer|whisk|season|knead|fold|roll|mix|bl?end|serve|preheat)\b/gi;
 
-  return unitHits >= 2 || (unitHits >= 1 && verbHits >= 2) || verbHits >= 4;
+  return {
+    mengen: (text.match(units) ?? []).length,
+    schritte: (text.match(verbs) ?? []).length,
+  };
 }

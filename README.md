@@ -51,6 +51,32 @@ Erst wenn davon nichts Verwertbares übrig bleibt, läuft faster-whisper an — 
 `small` und int8 etwa siebenfache Echtzeit, ein 10-Minuten-Video also in gut
 80 Sekunden.
 
+### Was als „verwertbar" gilt
+
+Hier steckt der Haken: Eine Videobeschreibung enthält oft **nur die Zutatenliste**.
+Mengen ohne Anleitung sind aber ein Einkaufszettel, kein Rezept. Ein Text wird
+deshalb nur übernommen, wenn er zwei unabhängige Dinge zeigt:
+
+| Signal | Woran erkannt |
+| --- | --- |
+| **Mengen** | Zahl plus Einheit — `500 g`, `350 ml`, `2 EL`, `1 Bund` |
+| **Zubereitung** | Arbeitsschritte — `verkneten`, `gehen lassen`, `ausrollen`, `anbraten`, `backen` … |
+
+Mindestens **zwei Zubereitungsschritte** sind Pflicht, sonst ist es keine Anleitung
+(ein einzelnes Verb steht auch mal in der Zutatenliste — „Salz zum Abschmecken").
+Dazu entweder zwei Mengenangaben oder insgesamt vier Schritte. Und der Text muss
+`FREE_TEXT_MIN_CHARS` erreichen.
+
+Fällt eine Quelle durch, steht der Grund mit Zahlen im Log:
+
+```
+[extraktion] Videobeschreibung verworfen: kein Rezept erkennbar (9 Mengen, 0 Zubereitungsschritte)
+```
+
+Danach wird transkribiert — denn genau dann steht das Rezept im Ton, nicht im Text.
+Untertitel und Beschreibung behalten dabei ihren Vorrang; sie müssen nur wirklich
+ein Rezept enthalten.
+
 ## Schnellstart
 
 Auf dem Proxmox (LXC oder VM mit Docker):
@@ -300,7 +326,7 @@ Alles über die `.env`, Vorlage in [`.env.example`](.env.example). Die wichtigst
 | `APP_TOKEN` | — | Zugriffsschutz für API und Web-App |
 | `TRANSCRIBE_PROVIDER` | `local` | `local` (faster-whisper) oder `gemini` |
 | `WHISPER_MODEL` | `small` | `tiny`/`base`/`small`/`medium` — Tempo gegen Qualität |
-| `FREE_TEXT_MIN_CHARS` | `400` | ab wann vorhandener Text als ausreichend gilt |
+| `FREE_TEXT_MIN_CHARS` | `600` | ab wann vorhandener Text als ausreichend gilt (darunter wird transkribiert) |
 | `TAGS_WITH_HASH` | `false` | Tags mit führendem `#` speichern |
 | `NEW_RECIPE_STATUS` | — | Status für neu erfasste Rezepte (nur beim Anlegen) |
 | `GEMINI_MODEL` | `gemini-3.5-flash` | Modell für die Rezept-Extraktion |

@@ -64,7 +64,7 @@ const ConfigSchema = z.object({
   whisperModel: z.string().default("small"),
   whisperComputeType: z.string().default("int8"),
 
-  freeTextMinChars: z.coerce.number().int().nonnegative().default(400),
+  freeTextMinChars: z.coerce.number().int().nonnegative().default(600),
   tagsWithHash: bool.default(false),
   /** Wert fuer die Status-Spalte bei NEU angelegten Rezepten. Leer = nicht setzen. */
   newRecipeStatus: z.string().default(""),
