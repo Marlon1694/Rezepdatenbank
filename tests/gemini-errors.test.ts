@@ -65,3 +65,49 @@ describe("explain", () => {
     );
   });
 });
+
+describe("describeFailure", () => {
+  const { describeFailure } = __test;
+
+  it("stellt das Hauptmodell in den Vordergrund, nicht das Ausweichmodell", () => {
+    // Der Fall aus der Praxis: Google zog die 2.5er-Reihe zurück, das
+    // Ausweichmodell antwortete mit 404 - und verdeckte damit die eigentliche
+    // Ursache, die Überlastung des Hauptmodells.
+    const haupt = new Error('{"error":{"code":503,"status":"UNAVAILABLE"}}');
+    const fallback = new Error('{"error":{"code":404,"message":"not found"}}');
+    const text = describeFailure("gemini-3.5-flash", haupt, "gemini-2.5-flash", fallback);
+
+    expect(text).toContain("gemini-3.5-flash");
+    expect(text).toContain("überlastet");
+    // Das zurückgezogene Ausweichmodell wird erwähnt, aber erst danach.
+    expect(text.indexOf("gemini-3.5-flash")).toBeLessThan(text.indexOf("gemini-2.5-flash"));
+  });
+
+  it("sagt beim zurückgezogenen Ausweichmodell, was zu tun ist", () => {
+    const text = describeFailure(
+      "m",
+      new Error('{"error":{"code":503}}'),
+      "gemini-2.5-flash",
+      new Error('{"error":{"code":404}}'),
+    );
+    expect(text).toContain("gibt es nicht mehr");
+    expect(text).toContain("GEMINI_FALLBACK_MODEL");
+  });
+
+  it("erwähnt das Ausweichmodell gar nicht, wenn keines lief", () => {
+    const text = describeFailure("m", new Error('{"error":{"code":429}}'), "", undefined);
+    expect(text).toContain("Kontingent");
+    expect(text).not.toContain("Ausweichmodell");
+  });
+
+  it("nennt ein erfolgloses Ausweichmodell ohne Handlungsaufforderung", () => {
+    const text = describeFailure(
+      "m",
+      new Error('{"error":{"code":503}}'),
+      "anderes",
+      new Error('{"error":{"code":503}}'),
+    );
+    expect(text).toContain("half ebenfalls nicht");
+    expect(text).not.toContain("gibt es nicht mehr");
+  });
+});

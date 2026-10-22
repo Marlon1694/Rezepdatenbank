@@ -79,6 +79,8 @@ export async function buildApp() {
     // TikTok verlangt einen Browser-Fingerabdruck. Fehlt curl_cffi, scheitert es
     // dort mit einer Meldung, die nach einem kaputten Extraktor aussieht.
     impersonation: await ytdlp.hasImpersonation(),
+    // Ohne JavaScript-Laufzeit gibt YouTube seine Untertitel nicht heraus.
+    jsRuntime: await ytdlp.hasJsRuntime(),
     transcribeProvider: cfg.transcribeProvider,
     coverSource: cfg.coverSource,
   }));

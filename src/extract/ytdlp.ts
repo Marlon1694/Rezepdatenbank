@@ -14,6 +14,72 @@ export interface MediaInfo {
   thumbnail?: string;
   webpageUrl?: string;
   extractor?: string;
+  /** Vom Video gemeldete Sprache - bei Auto-Untertiteln die Originalspur. */
+  language?: string;
+  /** Sprachen mit echten, vom Kanal hinterlegten Untertiteln. */
+  subtitleLangs: string[];
+  /** Sprachen mit automatisch erzeugten Untertiteln. */
+  autoCaptionLangs: string[];
+}
+
+export interface SubtitleChoice {
+  lang: string;
+  auto: boolean;
+}
+
+/**
+ * Waehlt GENAU EINE Untertitelspur aus dem, was das Video wirklich anbietet.
+ *
+ * Vorher wurden pauschal sechs Varianten angefragt (de, en, de-orig, en-orig,
+ * de.*, en.*). Jede davon ist eine eigene Anfrage an YouTubes Untertitel-
+ * Endpunkt, und der antwortet darauf zuverlaessig mit "429 Too Many Requests".
+ * Eine einzige, gezielte Anfrage laeuft durch.
+ *
+ * Bei Auto-Untertiteln steht die Sprache des Videos vorn: YouTube bietet dort
+ * Hunderte Uebersetzungsziele an, aber nur die Originalspur ist nicht selbst
+ * schon maschinell uebersetzt.
+ */
+export function pickSubtitleLanguage(
+  info: Pick<MediaInfo, "language" | "subtitleLangs" | "autoCaptionLangs">,
+  preferred: string[] = ["de", "en"],
+): SubtitleChoice | undefined {
+  const basis = (l: string) => l.replace(/-orig$/i, "").split("-")[0]?.toLowerCase() ?? "";
+  const eigene = info.language ? basis(info.language) : "";
+
+  /**
+   * Bei Auto-Untertiteln geht "-orig" vor: YouTube fuehrt die Originalspur
+   * eines deutschen Videos als "de-orig", waehrend das schlichte "de" eine
+   * Rueckuebersetzung sein kann - also Maschine auf Maschine. Bei echten
+   * Untertiteln gibt es kein "-orig", dort zaehlt der genaue Treffer.
+   */
+  const waehle = (
+    verfuegbar: string[],
+    reihenfolge: string[],
+    origZuerst: boolean,
+  ): string | undefined => {
+    for (const wunsch of reihenfolge) {
+      if (!wunsch) continue;
+      const genau = () => verfuegbar.find((v) => v.toLowerCase() === wunsch);
+      const orig = () => verfuegbar.find((v) => v.toLowerCase() === `${wunsch}-orig`);
+
+      const treffer = origZuerst ? (orig() ?? genau()) : (genau() ?? orig());
+      if (treffer) return treffer;
+
+      // Regionalvariante wie "de-DE" als letzte Stufe.
+      const nahe = verfuegbar.find((v) => basis(v) === wunsch);
+      if (nahe) return nahe;
+    }
+    return undefined;
+  };
+
+  // Echte Untertitel sind immer besser als automatische.
+  const manuell = waehle(info.subtitleLangs, [...preferred, eigene], false);
+  if (manuell) return { lang: manuell, auto: false };
+
+  const automatisch = waehle(info.autoCaptionLangs, [eigene, ...preferred], true);
+  if (automatisch) return { lang: automatisch, auto: true };
+
+  return undefined;
 }
 
 export class YtDlpError extends Error {
@@ -127,7 +193,7 @@ export async function selfUpdate(): Promise<void> {
     "--upgrade",
     "--no-cache-dir",
     ...(channel === "nightly" ? ["--pre"] : []),
-    "yt-dlp[default,curl-cffi]",
+    "yt-dlp[default,curl-cffi,deno]",
   ];
 
   await new Promise<void>((resolve) => {
@@ -156,6 +222,22 @@ export async function selfUpdate(): Promise<void> {
   });
 }
 
+/**
+ * Meldet, ob eine JavaScript-Laufzeit da ist.
+ *
+ * YouTube verlangt fuer seine Untertitel einen Token, den nur der mitgelieferte
+ * Challenge-Loeser errechnen kann - und der braucht Deno. Fehlt es, bleiben
+ * Titel und Beschreibung abrufbar, die Untertitel aber nicht. Der Fehler sieht
+ * dann aus, als haette das Video gar keine.
+ */
+export async function hasJsRuntime(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn("deno", ["--version"], { stdio: "ignore" });
+    child.on("error", () => resolve(false));
+    child.on("close", (code) => resolve(code === 0));
+  });
+}
+
 /** Meldet, ob Browser-Fingerabdruecke verfuegbar sind - TikTok braucht sie. */
 export async function hasImpersonation(): Promise<boolean> {
   try {
@@ -179,7 +261,13 @@ export async function probe(url: string): Promise<MediaInfo> {
   if (code !== 0) throw new YtDlpError(explainError(stderr), stderr);
 
   const data = JSON.parse(stdout) as Record<string, unknown>;
+  const keysOf = (v: unknown): string[] =>
+    v && typeof v === "object" ? Object.keys(v as Record<string, unknown>) : [];
+
   return {
+    language: typeof data.language === "string" ? data.language : undefined,
+    subtitleLangs: keysOf(data.subtitles),
+    autoCaptionLangs: keysOf(data.automatic_captions),
     title: typeof data.title === "string" ? data.title : undefined,
     description: typeof data.description === "string" ? data.description : undefined,
     uploader: typeof data.uploader === "string" ? data.uploader : undefined,
@@ -196,20 +284,24 @@ export async function probe(url: string): Promise<MediaInfo> {
  */
 export async function fetchSubtitles(
   url: string,
-  langs = ["de", "en"],
+  choice: SubtitleChoice,
 ): Promise<{ text: string; lang: string; auto: boolean } | undefined> {
   const dir = await mkdtemp(join(tmpdir(), "subs-"));
   try {
     const { code, stderr } = await run([
       "--skip-download",
-      "--write-subs",
-      "--write-auto-subs",
+      // Genau eine Spur. Jede weitere ist eine eigene Anfrage an YouTubes
+      // Untertitel-Endpunkt und provoziert HTTP 429.
+      choice.auto ? "--write-auto-subs" : "--write-subs",
       "--sub-langs",
-      [...langs, ...langs.map((l) => `${l}-orig`), ...langs.map((l) => `${l}.*`)].join(","),
+      choice.lang,
       "--sub-format",
       "vtt/srt/best",
       "--convert-subs",
       "vtt",
+      // Kurz Luft lassen - YouTube drosselt schnelle Folgeanfragen.
+      "--sleep-requests",
+      "1",
       "--no-warnings",
       "--no-playlist",
       "-o",
@@ -217,46 +309,42 @@ export async function fetchSubtitles(
       ...cookieArgs(),
       url,
     ]);
-    // Untertitel sind der schnellste Weg - schlaegt er fehl, laeuft stattdessen
-    // Whisper und der Job dauert Minuten statt Sekunden. Deshalb nicht still
-    // uebergehen, sondern den Grund protokollieren.
-    if (code !== 0) {
-      console.warn(`[untertitel] yt-dlp beendete sich mit ${code}: ${explainError(stderr)}`);
-      return undefined;
-    }
 
+    // Erst nachsehen, ob trotzdem etwas ankam. yt-dlp beendet sich mit 1, sobald
+    // IRGENDEINE angeforderte Spur scheitert - fruehr wurde deshalb auch eine
+    // erfolgreich geladene Datei weggeworfen.
     const files = (await readdir(dir)).filter((f) => f.endsWith(".vtt"));
+
     if (!files.length) {
-      const hint = stderr.trim().split("\n").slice(-3).join(" | ");
-      console.warn(
-        `[untertitel] keine Datei erhalten. Das Video hat entweder keine, oder ` +
-          `YouTube verweigert sie ohne Cookies (siehe docs/cookies.md).` +
-          (hint ? ` Letzte Meldung: ${hint}` : ""),
-      );
+      const grund =
+        code !== 0
+          ? explainError(stderr)
+          : "Das Video liefert für diese Sprache keine Datei.";
+      console.warn(`[untertitel] ${choice.lang} (${choice.auto ? "automatisch" : "manuell"}): ${grund}`);
       return undefined;
     }
 
-    // Bevorzugung: gewuenschte Sprachreihenfolge, manuell vor automatisch.
-    const score = (f: string): number => {
-      const langIndex = langs.findIndex((l) => f.includes(`.${l}`));
-      const base = langIndex === -1 ? langs.length : langIndex;
-      return base * 2;
-    };
-    files.sort((a, b) => score(a) - score(b));
+    if (code !== 0) {
+      console.warn(
+        `[untertitel] yt-dlp meldete einen Fehler, lieferte die Datei aber trotzdem - wird verwendet.`,
+      );
+    }
 
     const chosen = files[0];
     if (!chosen) return undefined;
 
     const raw = await readFile(join(dir, chosen), "utf8");
     const text = parseVtt(raw);
-    if (!text) return undefined;
+    if (!text) {
+      console.warn(`[untertitel] ${chosen} enthielt keinen verwertbaren Text.`);
+      return undefined;
+    }
 
-    const langMatch = /\.([a-z]{2}(?:-[A-Za-z]+)?)\.vtt$/.exec(chosen);
-    return {
-      text,
-      lang: langMatch?.[1] ?? "?",
-      auto: raw.includes("Kind: captions") && raw.includes("Language:"),
-    };
+    console.log(
+      `[untertitel] ${choice.lang} (${choice.auto ? "automatisch" : "manuell"}), ` +
+        `${text.length} Zeichen`,
+    );
+    return { text, lang: choice.lang, auto: choice.auto };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

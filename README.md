@@ -51,6 +51,32 @@ Erst wenn davon nichts Verwertbares übrig bleibt, läuft faster-whisper an — 
 `small` und int8 etwa siebenfache Echtzeit, ein 10-Minuten-Video also in gut
 80 Sekunden.
 
+### Was als „verwertbar" gilt
+
+Hier steckt der Haken: Eine Videobeschreibung enthält oft **nur die Zutatenliste**.
+Mengen ohne Anleitung sind aber ein Einkaufszettel, kein Rezept. Ein Text wird
+deshalb nur übernommen, wenn er zwei unabhängige Dinge zeigt:
+
+| Signal | Woran erkannt |
+| --- | --- |
+| **Mengen** | Zahl plus Einheit — `500 g`, `350 ml`, `2 EL`, `1 Bund` |
+| **Zubereitung** | Arbeitsschritte — `verkneten`, `gehen lassen`, `ausrollen`, `anbraten`, `backen` … |
+
+Mindestens **zwei Zubereitungsschritte** sind Pflicht, sonst ist es keine Anleitung
+(ein einzelnes Verb steht auch mal in der Zutatenliste — „Salz zum Abschmecken").
+Dazu entweder zwei Mengenangaben oder insgesamt vier Schritte. Und der Text muss
+`FREE_TEXT_MIN_CHARS` erreichen.
+
+Fällt eine Quelle durch, steht der Grund mit Zahlen im Log:
+
+```
+[extraktion] Videobeschreibung verworfen: kein Rezept erkennbar (9 Mengen, 0 Zubereitungsschritte)
+```
+
+Danach wird transkribiert — denn genau dann steht das Rezept im Ton, nicht im Text.
+Untertitel und Beschreibung behalten dabei ihren Vorrang; sie müssen nur wirklich
+ein Rezept enthalten.
+
 ## Schnellstart
 
 Auf dem Proxmox (LXC oder VM mit Docker):
@@ -236,6 +262,50 @@ standardmäßig `nightly`. Der stabile Kanal hinkt Wochen hinterher.
 > die GitHub-Releases, ersetzt sich aber nicht selbst und meldet fälschlich
 > „up to date". Die App aktualisiert deshalb über pip.
 
+### Wenn YouTube „429 Too Many Requests" meldet
+
+YouTube drosselt seinen Untertitel-Endpunkt streng. Deshalb wird **genau eine**
+Spur angefragt, ausgewählt aus dem, was die Metadaten tatsächlich anbieten — nicht
+mehrere Sprachvarianten auf Verdacht.
+
+Bei automatischen Untertiteln hat die Originalspur Vorrang (`de-orig` vor `de`):
+YouTube bietet Hunderte Übersetzungsziele an, und das schlichte `de` eines deutschen
+Videos kann eine Rückübersetzung sein — Maschine auf Maschine.
+
+Kommt der 429 trotzdem, hilft Abwarten oder eine `cookies.txt` (`docs/cookies.md`).
+Eine angemeldete Sitzung wird deutlich großzügiger behandelt.
+
+### Wenn YouTube keine Untertitel liefert
+
+Dann dauert jedes Video unnötig lang, weil statt der Untertitel die Transkription
+anläuft. Prüfen:
+
+```bash
+curl -s localhost:3000/api/health
+```
+
+Steht dort `"jsRuntime": false`, fehlt die JavaScript-Laufzeit. YouTube verlangt für
+seine Untertitel einen Token, den nur yt-dlps Challenge-Löser errechnen kann — und
+der braucht Deno. Ohne ihn bleiben Titel und Beschreibung abrufbar, die Untertitel
+nicht; der Fehler sieht dann aus, als hätte das Video schlicht keine.
+
+Im Image ist sie über `yt-dlp[default,curl-cffi,deno]` enthalten. Fehlt sie, das
+Image neu bauen:
+
+```bash
+docker compose build --no-cache && docker compose up -d
+```
+
+### Wenn ein Modell „nicht verfügbar" ist
+
+Google zieht Modelle nach einiger Zeit zurück. `npm run models` zeigt, was dein Key
+aktuell kennt — von dort einen Namen nach `GEMINI_MODEL` beziehungsweise
+`GEMINI_FALLBACK_MODEL` übernehmen.
+
+Scheitert nur das Ausweichmodell, nennt die Fehlermeldung trotzdem das Problem des
+Hauptmodells zuerst: Ein zurückgezogenes Ausweichmodell ist eine eigene Information,
+aber nicht die, nach der man beim Suchen greifen sollte.
+
 ### Wenn Gemini mit HTTP 503 antwortet
 
 Das Modell ist vorübergehend überlastet. Die App wiederholt den Aufruf bis zu
@@ -256,11 +326,11 @@ Alles über die `.env`, Vorlage in [`.env.example`](.env.example). Die wichtigst
 | `APP_TOKEN` | — | Zugriffsschutz für API und Web-App |
 | `TRANSCRIBE_PROVIDER` | `local` | `local` (faster-whisper) oder `gemini` |
 | `WHISPER_MODEL` | `small` | `tiny`/`base`/`small`/`medium` — Tempo gegen Qualität |
-| `FREE_TEXT_MIN_CHARS` | `400` | ab wann vorhandener Text als ausreichend gilt |
+| `FREE_TEXT_MIN_CHARS` | `600` | ab wann vorhandener Text als ausreichend gilt (darunter wird transkribiert) |
 | `TAGS_WITH_HASH` | `false` | Tags mit führendem `#` speichern |
 | `NEW_RECIPE_STATUS` | — | Status für neu erfasste Rezepte (nur beim Anlegen) |
 | `GEMINI_MODEL` | `gemini-3.5-flash` | Modell für die Rezept-Extraktion |
-| `GEMINI_FALLBACK_MODEL` | `gemini-2.5-flash` | Ausweichmodell bei Überlastung |
+| `GEMINI_FALLBACK_MODEL` | `gemini-3.6-flash` | Ausweichmodell bei Überlastung |
 | `GEMINI_TRANSCRIBE_MODEL` | `gemini-3.5-transcribe` | nur bei `TRANSCRIBE_PROVIDER=gemini` |
 | `COVER_SOURCE` | `thumbnail` | `thumbnail`, `ai`, `thumbnail+ai` oder `none` |
 | `IMAGE_MODEL` | — | Bildmodell für `ai` (`npm run models` zeigt die Namen) |

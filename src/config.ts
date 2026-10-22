@@ -44,7 +44,7 @@ const ConfigSchema = z.object({
   // Verfuegbarkeit - genau das fuehrt zu sporadischen 503ern.
   geminiModel: z.string().default("gemini-3.5-flash"),
   /** Wird angelaufen, wenn das Hauptmodell ueberlastet bleibt. Leer = keines. */
-  geminiFallbackModel: z.string().default("gemini-2.5-flash"),
+  geminiFallbackModel: z.string().default("gemini-3.6-flash"),
   /** Eigenes Modell fuer Audio, falls TRANSCRIBE_PROVIDER=gemini. */
   geminiTranscribeModel: z.string().default("gemini-3.5-transcribe"),
 
@@ -64,7 +64,7 @@ const ConfigSchema = z.object({
   whisperModel: z.string().default("small"),
   whisperComputeType: z.string().default("int8"),
 
-  freeTextMinChars: z.coerce.number().int().nonnegative().default(400),
+  freeTextMinChars: z.coerce.number().int().nonnegative().default(600),
   tagsWithHash: bool.default(false),
   /** Wert fuer die Status-Spalte bei NEU angelegten Rezepten. Leer = nicht setzen. */
   newRecipeStatus: z.string().default(""),
@@ -83,6 +83,25 @@ const ConfigSchema = z.object({
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
+
+export type CoverSource = Config["coverSource"];
+
+/**
+ * Welche Titelbild-Quellen erlaubt sind.
+ *
+ * Hier stand frueher `coverSource.includes("ai")` - und das ist eine Falle:
+ * In "thumb-n-ai-l" steckt die Zeichenfolge "ai". Mit COVER_SOURCE=thumbnail
+ * wurde deshalb doch das (kostenpflichtige) Bildmodell angefragt, sobald kein
+ * Vorschaubild da war. Nur weil IMAGE_MODEL leer war, fiel es nicht auf.
+ *
+ * Deshalb: aufzaehlen statt in Zeichenketten suchen.
+ */
+export function coverWants(source: CoverSource): { thumbnail: boolean; ai: boolean } {
+  return {
+    thumbnail: source === "thumbnail" || source === "thumbnail+ai",
+    ai: source === "ai" || source === "thumbnail+ai",
+  };
+}
 
 let cached: Config | undefined;
 

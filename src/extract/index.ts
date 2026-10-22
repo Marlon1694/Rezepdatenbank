@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { getConfig } from "../config.ts";
 import * as ytdlp from "./ytdlp.ts";
 import { fetchPage } from "./web.ts";
-import { looksLikeRecipe } from "./vtt.ts";
+import { looksLikeRecipe, recipeSignals } from "./vtt.ts";
 import { transcribe } from "../transcribe/index.ts";
 import { isoDurationToMinutes } from "./jsonld.ts";
 import { isPinterestUrl, findPinTarget } from "./pinterest.ts";
@@ -122,11 +122,20 @@ export async function extract(url: string, onProgress: ProgressFn = () => {}): P
   onProgress("Video-Infos werden geladen");
   const info = await ytdlp.probe(url);
 
-  onProgress("Untertitel werden gesucht");
-  const subs = await ytdlp.fetchSubtitles(url).catch((err: unknown) => {
-    console.warn(`[untertitel] Abruf fehlgeschlagen: ${String(err)}`);
-    return undefined;
-  });
+  // Aus den Metadaten ablesen, was es ueberhaupt gibt, und genau eine Spur
+  // anfordern - statt auf Verdacht mehrere, was YouTube mit 429 quittiert.
+  const choice = ytdlp.pickSubtitleLanguage(info);
+  let subs: Awaited<ReturnType<typeof ytdlp.fetchSubtitles>>;
+
+  if (choice) {
+    onProgress("Untertitel werden geladen");
+    subs = await ytdlp.fetchSubtitles(url, choice).catch((err: unknown) => {
+      console.warn(`[untertitel] Abruf fehlgeschlagen: ${String(err)}`);
+      return undefined;
+    });
+  } else {
+    console.log("[untertitel] Das Video bietet keine an.");
+  }
 
   const description = info.description?.trim() ?? "";
   const candidates: Array<{ text: string; source: TextSource }> = [];
@@ -160,10 +169,11 @@ export async function extract(url: string, onProgress: ProgressFn = () => {}): P
   // Sichtbar machen, warum trotz vorhandenem Text transkribiert wird - sonst
   // raetselt man, weshalb ein Video mit Untertiteln zwei Minuten braucht.
   for (const c of candidates) {
+    const { mengen, schritte } = recipeSignals(c.text);
     const grund =
       c.text.length < cfg.freeTextMinChars
         ? `nur ${c.text.length} Zeichen (Schwelle ${cfg.freeTextMinChars})`
-        : "sieht nicht nach einem Rezept aus";
+        : `kein Rezept erkennbar (${mengen} Mengen, ${schritte} Zubereitungsschritte)`;
     console.log(`[extraktion] ${c.source} verworfen: ${grund}`);
   }
 

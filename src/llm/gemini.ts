@@ -118,18 +118,24 @@ export async function generateJson({
     (m, i, all): m is string => Boolean(m) && all.indexOf(m) === i,
   );
 
-  let lastError: unknown;
-  let lastModel = cfg.geminiModel;
+  // Getrennt festhalten: Scheitert das Ausweichmodell, weil es zurueckgezogen
+  // wurde, darf dessen 404 nicht die eigentliche Ursache verdecken. Genau das
+  // passierte, als Google seine 2.5er-Reihe abschaltete - gemeldet wurde
+  // "Modell gibt es nicht", gemeint war die Ueberlastung des Hauptmodells.
+  let primaryError: unknown;
+  let fallbackError: unknown;
 
   for (const [modelIndex, model] of models.entries()) {
-    const attempts = modelIndex === 0 ? maxAttempts : 1;
+    const istHaupt = modelIndex === 0;
+    const attempts = istHaupt ? maxAttempts : 1;
 
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
         return await callOnce(model, prompt, schema);
       } catch (err) {
-        lastError = err;
-        lastModel = model;
+        if (istHaupt) primaryError = err;
+        else fallbackError = err;
+
         const status = statusOf(err);
 
         // Bei einem Fehler, der sich nicht von allein loest (falscher Key, falsches
@@ -146,14 +152,42 @@ export async function generateJson({
       }
     }
 
-    if (models[modelIndex + 1]) {
-      console.warn(`[gemini] wechsle auf Ausweichmodell ${models[modelIndex + 1]}`);
-    }
+    const naechstes = models[modelIndex + 1];
+    if (naechstes) console.warn(`[gemini] wechsle auf Ausweichmodell ${naechstes}`);
   }
 
-  const raw = lastError instanceof Error ? lastError.message : String(lastError);
-  throw new Error(explain(statusOf(lastError), lastModel, raw));
+  throw new Error(
+    describeFailure(cfg.geminiModel, primaryError, cfg.geminiFallbackModel, fallbackError),
+  );
+}
+
+/**
+ * Setzt die Meldung so zusammen, dass das Hauptmodell im Vordergrund steht.
+ *
+ * Ein zurueckgezogenes Ausweichmodell ist eine eigene Information - aber nicht
+ * die, nach der man beim Suchen des Fehlers greifen sollte.
+ */
+export function describeFailure(
+  model: string,
+  primaryError: unknown,
+  fallbackModel: string,
+  fallbackError: unknown,
+): string {
+  const rawPrimary = primaryError instanceof Error ? primaryError.message : String(primaryError);
+  const haupt = explain(statusOf(primaryError), model, rawPrimary);
+
+  if (fallbackError === undefined) return haupt;
+
+  const statusFallback = statusOf(fallbackError);
+  const zusatz =
+    statusFallback === 404
+      ? `Das Ausweichmodell "${fallbackModel}" gibt es nicht mehr — setze ` +
+        `GEMINI_FALLBACK_MODEL in der .env neu ("npm run models" zeigt die ` +
+        `verfügbaren) oder lass es leer.`
+      : `Das Ausweichmodell "${fallbackModel}" half ebenfalls nicht.`;
+
+  return `${haupt} ${zusatz}`;
 }
 
 /** Nur fuer Tests: die reinen Hilfsfunktionen ohne Netzwerk. */
-export const __test = { statusOf, explain };
+export const __test = { statusOf, explain, describeFailure };
