@@ -4,12 +4,18 @@ import { getConfig } from "../config.ts";
 import { SUPPORTED_EXTENSIONS, mimeForFile } from "../lib/images.ts";
 
 /**
- * Ablage der hochgeladenen Fotos: data/uploads/<job-id>/1.jpg, 2.jpg, ...
+ * Ablage der hochgeladenen Fotos: data/uploads/<besitzer-id>/1.jpg, 2.jpg, ...
  *
- * Die Bilder bleiben liegen, nicht aus Sammelleidenschaft, sondern damit
- * "Erneut versuchen" funktioniert, ohne dass du noch einmal fotografieren
- * musst - und damit in der Web-App nachvollziehbar bleibt, was das Modell
- * eigentlich vor sich hatte.
+ * Die Bilder bleiben nur so lange liegen, wie sie gebraucht werden. Steht das
+ * Rezept in Notion, sind sie weg - das Titelbild liegt dann ohnehin dort.
+ * Bleiben duerfen sie, solange noch etwas davon abhaengt:
+ *
+ *   - ein fehlgeschlagener Job, der sich erneut versuchen laesst
+ *   - Geschwisterrezepte aus demselben Stapel, die noch nicht durch sind
+ *
+ * Was trotzdem uebrig bleibt, raeumt sweepPhotos() nach der Aufbewahrungsfrist
+ * weg. Ohne das waechst der Datenordner still vor sich hin, bis die Platte
+ * voll ist.
  */
 
 export function uploadsRoot(): string {
