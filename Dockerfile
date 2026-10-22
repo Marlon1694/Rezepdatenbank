@@ -36,12 +36,20 @@ ENV VIRTUAL_ENV=/opt/venv
 RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# yt-dlp[default,curl-cffi]: curl-cffi liefert die Browser-Fingerabdruecke, ohne
-# die TikTok seine Challenge nicht freigibt ("Unexpected response from webpage
-# request"). Ohne dieses Extra meldet --list-impersonate-targets alles als
-# "unavailable" - und der Fehler sieht wie ein kaputter Extraktor aus.
+# Drei Extras, jedes fuer einen konkreten Fall:
+#
+#   default    bringt u.a. yt-dlp-ejs mit, den Loeser fuer YouTubes
+#              JavaScript-Challenge
+#   curl-cffi  liefert die Browser-Fingerabdruecke, ohne die TikTok seine
+#              Challenge nicht freigibt ("Unexpected response from webpage request")
+#   deno       die JavaScript-Laufzeit, die den Loeser ueberhaupt erst ausfuehrt
+#
+# Ohne "deno" ist der Loeser zwar installiert, kann aber nicht laufen. YouTube
+# gibt dann seine Untertitel nicht heraus - Titel und Beschreibung kommen noch
+# durch, das Transkript nicht. Der Fehler sieht deshalb aus wie "das Video hat
+# eben keine Untertitel".
 RUN pip install --no-cache-dir \
-      "yt-dlp[default,curl-cffi]" \
+      "yt-dlp[default,curl-cffi,deno]" \
       faster-whisper
 
 WORKDIR /app

@@ -44,7 +44,7 @@ const ConfigSchema = z.object({
   // Verfuegbarkeit - genau das fuehrt zu sporadischen 503ern.
   geminiModel: z.string().default("gemini-3.5-flash"),
   /** Wird angelaufen, wenn das Hauptmodell ueberlastet bleibt. Leer = keines. */
-  geminiFallbackModel: z.string().default("gemini-2.5-flash"),
+  geminiFallbackModel: z.string().default("gemini-3.6-flash"),
   /** Eigenes Modell fuer Audio, falls TRANSCRIBE_PROVIDER=gemini. */
   geminiTranscribeModel: z.string().default("gemini-3.5-transcribe"),
 

@@ -127,7 +127,7 @@ export async function selfUpdate(): Promise<void> {
     "--upgrade",
     "--no-cache-dir",
     ...(channel === "nightly" ? ["--pre"] : []),
-    "yt-dlp[default,curl-cffi]",
+    "yt-dlp[default,curl-cffi,deno]",
   ];
 
   await new Promise<void>((resolve) => {
@@ -153,6 +153,22 @@ export async function selfUpdate(): Promise<void> {
       }
       resolve();
     });
+  });
+}
+
+/**
+ * Meldet, ob eine JavaScript-Laufzeit da ist.
+ *
+ * YouTube verlangt fuer seine Untertitel einen Token, den nur der mitgelieferte
+ * Challenge-Loeser errechnen kann - und der braucht Deno. Fehlt es, bleiben
+ * Titel und Beschreibung abrufbar, die Untertitel aber nicht. Der Fehler sieht
+ * dann aus, als haette das Video gar keine.
+ */
+export async function hasJsRuntime(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn("deno", ["--version"], { stdio: "ignore" });
+    child.on("error", () => resolve(false));
+    child.on("close", (code) => resolve(code === 0));
   });
 }
 

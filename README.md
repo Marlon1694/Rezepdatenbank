@@ -236,6 +236,37 @@ standardmäßig `nightly`. Der stabile Kanal hinkt Wochen hinterher.
 > die GitHub-Releases, ersetzt sich aber nicht selbst und meldet fälschlich
 > „up to date". Die App aktualisiert deshalb über pip.
 
+### Wenn YouTube keine Untertitel liefert
+
+Dann dauert jedes Video unnötig lang, weil statt der Untertitel die Transkription
+anläuft. Prüfen:
+
+```bash
+curl -s localhost:3000/api/health
+```
+
+Steht dort `"jsRuntime": false`, fehlt die JavaScript-Laufzeit. YouTube verlangt für
+seine Untertitel einen Token, den nur yt-dlps Challenge-Löser errechnen kann — und
+der braucht Deno. Ohne ihn bleiben Titel und Beschreibung abrufbar, die Untertitel
+nicht; der Fehler sieht dann aus, als hätte das Video schlicht keine.
+
+Im Image ist sie über `yt-dlp[default,curl-cffi,deno]` enthalten. Fehlt sie, das
+Image neu bauen:
+
+```bash
+docker compose build --no-cache && docker compose up -d
+```
+
+### Wenn ein Modell „nicht verfügbar" ist
+
+Google zieht Modelle nach einiger Zeit zurück. `npm run models` zeigt, was dein Key
+aktuell kennt — von dort einen Namen nach `GEMINI_MODEL` beziehungsweise
+`GEMINI_FALLBACK_MODEL` übernehmen.
+
+Scheitert nur das Ausweichmodell, nennt die Fehlermeldung trotzdem das Problem des
+Hauptmodells zuerst: Ein zurückgezogenes Ausweichmodell ist eine eigene Information,
+aber nicht die, nach der man beim Suchen greifen sollte.
+
 ### Wenn Gemini mit HTTP 503 antwortet
 
 Das Modell ist vorübergehend überlastet. Die App wiederholt den Aufruf bis zu
@@ -260,7 +291,7 @@ Alles über die `.env`, Vorlage in [`.env.example`](.env.example). Die wichtigst
 | `TAGS_WITH_HASH` | `false` | Tags mit führendem `#` speichern |
 | `NEW_RECIPE_STATUS` | — | Status für neu erfasste Rezepte (nur beim Anlegen) |
 | `GEMINI_MODEL` | `gemini-3.5-flash` | Modell für die Rezept-Extraktion |
-| `GEMINI_FALLBACK_MODEL` | `gemini-2.5-flash` | Ausweichmodell bei Überlastung |
+| `GEMINI_FALLBACK_MODEL` | `gemini-3.6-flash` | Ausweichmodell bei Überlastung |
 | `GEMINI_TRANSCRIBE_MODEL` | `gemini-3.5-transcribe` | nur bei `TRANSCRIBE_PROVIDER=gemini` |
 | `COVER_SOURCE` | `thumbnail` | `thumbnail`, `ai`, `thumbnail+ai` oder `none` |
 | `IMAGE_MODEL` | — | Bildmodell für `ai` (`npm run models` zeigt die Namen) |
