@@ -236,6 +236,19 @@ standardmäßig `nightly`. Der stabile Kanal hinkt Wochen hinterher.
 > die GitHub-Releases, ersetzt sich aber nicht selbst und meldet fälschlich
 > „up to date". Die App aktualisiert deshalb über pip.
 
+### Wenn YouTube „429 Too Many Requests" meldet
+
+YouTube drosselt seinen Untertitel-Endpunkt streng. Deshalb wird **genau eine**
+Spur angefragt, ausgewählt aus dem, was die Metadaten tatsächlich anbieten — nicht
+mehrere Sprachvarianten auf Verdacht.
+
+Bei automatischen Untertiteln hat die Originalspur Vorrang (`de-orig` vor `de`):
+YouTube bietet Hunderte Übersetzungsziele an, und das schlichte `de` eines deutschen
+Videos kann eine Rückübersetzung sein — Maschine auf Maschine.
+
+Kommt der 429 trotzdem, hilft Abwarten oder eine `cookies.txt` (`docs/cookies.md`).
+Eine angemeldete Sitzung wird deutlich großzügiger behandelt.
+
 ### Wenn YouTube keine Untertitel liefert
 
 Dann dauert jedes Video unnötig lang, weil statt der Untertitel die Transkription

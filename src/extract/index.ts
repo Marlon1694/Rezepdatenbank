@@ -122,11 +122,20 @@ export async function extract(url: string, onProgress: ProgressFn = () => {}): P
   onProgress("Video-Infos werden geladen");
   const info = await ytdlp.probe(url);
 
-  onProgress("Untertitel werden gesucht");
-  const subs = await ytdlp.fetchSubtitles(url).catch((err: unknown) => {
-    console.warn(`[untertitel] Abruf fehlgeschlagen: ${String(err)}`);
-    return undefined;
-  });
+  // Aus den Metadaten ablesen, was es ueberhaupt gibt, und genau eine Spur
+  // anfordern - statt auf Verdacht mehrere, was YouTube mit 429 quittiert.
+  const choice = ytdlp.pickSubtitleLanguage(info);
+  let subs: Awaited<ReturnType<typeof ytdlp.fetchSubtitles>>;
+
+  if (choice) {
+    onProgress("Untertitel werden geladen");
+    subs = await ytdlp.fetchSubtitles(url, choice).catch((err: unknown) => {
+      console.warn(`[untertitel] Abruf fehlgeschlagen: ${String(err)}`);
+      return undefined;
+    });
+  } else {
+    console.log("[untertitel] Das Video bietet keine an.");
+  }
 
   const description = info.description?.trim() ?? "";
   const candidates: Array<{ text: string; source: TextSource }> = [];
