@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getConfig } from "../config.ts";
 import type { Recipe } from "../llm/recipeSchema.ts";
+import type { PhotoReading } from "../extract/photo.ts";
 
 /**
  * "draft" ist die Zwischenstufe eines Foto-Jobs: Die Zeile existiert schon
@@ -20,8 +21,25 @@ export interface Job {
   id: string;
   kind: JobKind;
   url: string;
-  /** Nur bei kind="foto": Dateinamen unter data/uploads/<id>/, in Reihenfolge. */
+  /** Nur bei kind="foto": Dateinamen unter data/uploads/<besitzer>/, in Reihenfolge. */
   photos: string[];
+  /**
+   * Gesetzt bei einem Rezept, das aus einem Stapel stammt. Die Bilder liegen
+   * dann beim Elternteil - ein Kochbuch wird nicht fuer jedes Rezept erneut
+   * auf die Platte geschrieben.
+   */
+  parentId: string | null;
+  /**
+   * Die bereits gelesene Abschrift. Der Elternteil liest den Stapel einmal und
+   * teilt ihn auf; die Kinder muessen die Bilder dann nicht noch einmal an das
+   * Modell schicken.
+   */
+  reading: PhotoReading | null;
+  /**
+   * Die Bilder wurden nach dem Erfolg geloescht. Sie sind dann weder anzuzeigen
+   * noch fuer einen zweiten Anlauf zu gebrauchen.
+   */
+  photosDeleted: boolean;
   status: JobStatus;
   step: string;
   error: string | null;
@@ -43,6 +61,9 @@ interface Row {
   kind: JobKind;
   url: string;
   photos_json: string | null;
+  parent_id: string | null;
+  reading_json: string | null;
+  photos_deleted: number | null;
   status: JobStatus;
   step: string;
   error: string | null;
@@ -74,6 +95,9 @@ function connect(): Database.Database {
       kind            TEXT NOT NULL DEFAULT 'link',
       url             TEXT NOT NULL DEFAULT '',
       photos_json     TEXT,
+      parent_id       TEXT,
+      reading_json    TEXT,
+      photos_deleted  INTEGER NOT NULL DEFAULT 0,
       status          TEXT NOT NULL,
       step            TEXT NOT NULL DEFAULT '',
       error           TEXT,
@@ -112,6 +136,9 @@ function migrate(handle: Database.Database): void {
   const nachtraeglich: Array<[string, string]> = [
     ["kind", `ALTER TABLE jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'link'`],
     ["photos_json", `ALTER TABLE jobs ADD COLUMN photos_json TEXT`],
+    ["parent_id", `ALTER TABLE jobs ADD COLUMN parent_id TEXT`],
+    ["reading_json", `ALTER TABLE jobs ADD COLUMN reading_json TEXT`],
+    ["photos_deleted", `ALTER TABLE jobs ADD COLUMN photos_deleted INTEGER NOT NULL DEFAULT 0`],
   ];
   for (const [spalte, sql] of nachtraeglich) {
     if (!vorhanden.has(spalte)) {
@@ -128,6 +155,9 @@ function toJob(row: Row): Job {
     kind: row.kind ?? "link",
     url: row.url,
     photos: row.photos_json ? (JSON.parse(row.photos_json) as string[]) : [],
+    parentId: row.parent_id ?? null,
+    reading: row.reading_json ? (JSON.parse(row.reading_json) as PhotoReading) : null,
+    photosDeleted: row.photos_deleted === 1,
     status: row.status,
     step: row.step,
     error: row.error,
@@ -187,6 +217,47 @@ function insert(opts: {
   return job;
 }
 
+/**
+ * Ein Rezept aus einem Stapel. Die Bilder bleiben beim Elternteil liegen -
+ * ein abfotografiertes Kochbuch wird nicht fuer jedes Rezept erneut auf die
+ * Platte geschrieben.
+ */
+export function createChildJob(opts: {
+  parentId: string;
+  photos: string[];
+  reading: PhotoReading;
+  title?: string;
+}): Job {
+  const now = new Date().toISOString();
+  const id = randomUUID();
+  connect()
+    .prepare(
+      `INSERT INTO jobs
+         (id, kind, url, photos_json, parent_id, reading_json, title,
+          status, step, created_at, updated_at)
+       VALUES (?, 'foto', '', ?, ?, ?, ?, 'queued', 'Wartet', ?, ?)`,
+    )
+    .run(
+      id,
+      JSON.stringify(opts.photos),
+      opts.parentId,
+      JSON.stringify(opts.reading),
+      opts.title ?? null,
+      now,
+      now,
+    );
+  const job = getJob(id);
+  if (!job) throw new Error("Job konnte nicht angelegt werden.");
+  return job;
+}
+
+export function childrenOf(parentId: string): Job[] {
+  const rows = connect()
+    .prepare(`SELECT * FROM jobs WHERE parent_id = ? ORDER BY created_at ASC`)
+    .all(parentId) as Row[];
+  return rows.map(toJob);
+}
+
 /** Schliesst einen Foto-Job ab: Dateinamen eintragen und einreihen. */
 export function queuePhotoJob(id: string, photos: string[]): void {
   connect()
@@ -219,6 +290,9 @@ export function nextQueuedJob(): Job | undefined {
 }
 
 type Patch = Partial<{
+  reading: PhotoReading | null;
+  photosDeleted: boolean;
+  photos: string[];
   status: JobStatus;
   step: string;
   error: string | null;
@@ -234,6 +308,9 @@ type Patch = Partial<{
 }>;
 
 const COLUMN: Record<keyof Patch, string> = {
+  reading: "reading_json",
+  photosDeleted: "photos_deleted",
+  photos: "photos_json",
   status: "status",
   step: "step",
   error: "error",
@@ -254,9 +331,11 @@ export function updateJob(id: string, patch: Patch): void {
 
   for (const [key, value] of Object.entries(patch) as Array<[keyof Patch, unknown]>) {
     sets.push(`${COLUMN[key]} = ?`);
-    if (key === "recipe") values.push(value ? JSON.stringify(value) : null);
-    else if (key === "notionUpdated") values.push(value ? 1 : 0);
-    else values.push(value ?? null);
+    if (key === "recipe" || key === "reading" || key === "photos") {
+      values.push(value ? JSON.stringify(value) : null);
+    } else if (key === "notionUpdated" || key === "photosDeleted") {
+      values.push(value ? 1 : 0);
+    } else values.push(value ?? null);
   }
   if (!sets.length) return;
 

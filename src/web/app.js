@@ -187,8 +187,10 @@ function renderThumbs() {
   box.innerHTML = "";
   box.hidden = photos.length === 0;
   $("photoSubmit").hidden = photos.length === 0;
+  // Bewusst ohne Zahlwort fürs Ergebnis: Aus acht Bildern können acht Rezepte
+  // werden, aus zweien auch nur eines. Was es wird, weiß erst die Leseschicht.
   $("photoSubmit").textContent =
-    photos.length > 1 ? `Rezept aus ${photos.length} Fotos erstellen` : "Rezept aus Foto erstellen";
+    photos.length > 1 ? `${photos.length} Fotos auswerten` : "Foto auswerten";
 
   photos.forEach((foto, i) => {
     const el = document.createElement("div");
@@ -338,10 +340,15 @@ function renderJobs(jobs) {
     el.tabIndex = 0;
 
     const istFoto = job.kind === "foto";
+    // Ein Stapel ist der Sammeleintrag, aus dem die einzelnen Rezepte
+    // entstanden sind - er hat selbst kein Rezept.
+    const istStapel = job.textSource === "Stapel";
     const title =
       job.recipeTitle || job.title || (istFoto ? `📷 ${job.photos.length} Foto(s)` : job.url);
     const meta = [];
-    if (job.platform) meta.push(job.platform);
+    if (istStapel) meta.push("📚 Stapel");
+    else if (job.parentId) meta.push("aus Stapel");
+    else if (job.platform) meta.push(job.platform);
     else if (istFoto) meta.push("Foto");
     if (job.status === "running" && job.step) meta.push(job.step);
     if (job.status === "done") {
@@ -473,7 +480,7 @@ async function openDetail(id) {
     job.kind === "foto"
       ? `<p class="muted small">📷 Eigenes Foto${
           job.photos.length > 1 ? ` · ${job.photos.length} Bilder` : ""
-        }</p>`
+        }${job.parentId ? " · aus einem Stapel" : ""}</p>`
       : `<p class="muted small">
            <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener">${escapeHtml(job.url)}</a>
          </p>`;
@@ -485,9 +492,28 @@ async function openDetail(id) {
   `;
   box.appendChild(head);
 
+  if (job.textSource === "Stapel") {
+    const hinweis = document.createElement("p");
+    hinweis.className = "muted";
+    hinweis.textContent =
+      "Aus diesen Fotos sind mehrere eigenständige Rezepte entstanden. " +
+      "Du findest sie im Verlauf als einzelne Einträge — jedes mit eigener " +
+      "Notion-Seite und eigener Korrekturansicht.";
+    box.appendChild(hinweis);
+  }
+
+  if (job.kind === "foto" && job.photosDeleted) {
+    const hinweis = document.createElement("p");
+    hinweis.className = "muted small";
+    hinweis.textContent =
+      "Die Fotos wurden gelöscht, nachdem das Rezept in Notion stand. " +
+      "Das Rezept unten kannst du weiterhin bearbeiten und erneut speichern.";
+    box.appendChild(hinweis);
+  }
+
   // Die Vorlage mit anzeigen: Stimmt etwas am Rezept nicht, ist die erste
   // Frage immer, ob das Bild überhaupt lesbar war.
-  if (job.kind === "foto" && job.photos.length) {
+  if (job.kind === "foto" && job.photos.length && !job.photosDeleted) {
     const galerie = document.createElement("div");
     galerie.className = "thumbs";
     job.photos.forEach((_, i) => {
@@ -529,7 +555,10 @@ async function openDetail(id) {
     });
   }
 
-  if (job.status === "failed") {
+  // Ohne Bilder gibt es nichts zu wiederholen - der Server wiese den Versuch
+  // ohnehin ab, und ein Knopf, der nur eine Fehlermeldung produziert, hilft
+  // niemandem.
+  if (job.status === "failed" && !(job.kind === "foto" && job.photosDeleted)) {
     const retry = document.createElement("button");
     retry.textContent = "Erneut versuchen";
     retry.className = "primary";
@@ -546,7 +575,12 @@ async function openDetail(id) {
   del.textContent = "Aus Verlauf löschen";
   del.className = "danger";
   wire(del, async () => {
-    if (!confirm("Diesen Eintrag aus dem Verlauf löschen? Die Notion-Seite bleibt bestehen.")) {
+    const frage =
+      job.textSource === "Stapel"
+        ? "Diesen Stapel und die daraus entstandenen Rezept-Einträge aus dem Verlauf " +
+          "löschen? Die Notion-Seiten bleiben bestehen."
+        : "Diesen Eintrag aus dem Verlauf löschen? Die Notion-Seite bleibt bestehen.";
+    if (!confirm(frage)) {
       del.disabled = false;
       return;
     }

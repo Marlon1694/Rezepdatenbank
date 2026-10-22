@@ -14,8 +14,16 @@ import {
   listJobs,
   deleteJob,
   updateJob,
+  childrenOf,
 } from "./jobs/store.ts";
-import { checkPhoto, savePhoto, removePhotos, photoPaths } from "./jobs/uploads.ts";
+import {
+  checkPhoto,
+  savePhoto,
+  removePhotos,
+  photoPaths,
+  photoOwner,
+  uploadsSize,
+} from "./jobs/uploads.ts";
 import { mimeForFile } from "./lib/images.ts";
 import { startWorker, nudgeWorker } from "./jobs/worker.ts";
 import { upsertRecipe } from "./notion/upsert.ts";
@@ -120,6 +128,9 @@ export async function buildApp() {
     fotos: Boolean(cfg.geminiApiKey),
     maxPhotos: cfg.maxPhotosPerJob,
     maxPhotoBytes: cfg.maxPhotoBytes,
+    // Damit sichtbar ist, ob sich auf der Platte etwas ansammelt.
+    uploads: await uploadsSize(),
+    photoRetentionDays: cfg.photoRetentionDays,
   }));
 
   /** Prueft die Notion-Verbindung und zeigt das erkannte Schema. */
@@ -256,7 +267,7 @@ export async function buildApp() {
     const name = Number.isInteger(n) ? job.photos[n] : undefined;
     if (!name) return reply.code(404).send({ error: "Foto nicht gefunden." });
 
-    const [pfad] = photoPaths(id, [name]);
+    const [pfad] = photoPaths(photoOwner(job), [name]);
     if (!pfad) return reply.code(404).send({ error: "Foto nicht gefunden." });
 
     // Nur aus der Liste des Jobs bedienen, nie aus dem Pfad der Anfrage - so
@@ -271,7 +282,7 @@ export async function buildApp() {
     const query = request.query as { limit?: string };
     const limit = Math.min(Number(query.limit) || 50, 200);
     // Transkripte sind lang - in der Liste nur die Kurzfassung.
-    return listJobs(limit).map(({ transcript, recipe, ...rest }) => ({
+    return listJobs(limit).map(({ transcript, recipe, reading, ...rest }) => ({
       ...rest,
       hasTranscript: Boolean(transcript),
       recipeTitle: recipe?.titel ?? null,
@@ -289,9 +300,17 @@ export async function buildApp() {
     const { id } = request.params as { id: string };
     const job = getJob(id);
     if (!job) return reply.code(404).send({ error: "Job nicht gefunden." });
+
+    // Ein Stapel nimmt die daraus entstandenen Rezepte mit - sonst blieben sie
+    // als Waisen im Verlauf stehen, ohne Bilder und ohne Zusammenhang.
+    const kinder = childrenOf(id);
+    for (const kind of kinder) deleteJob(kind.id);
+
     // Sonst blieben die Bilder als Karteileichen im Datenverzeichnis zurueck.
-    if (job.kind === "foto") await removePhotos(id).catch(() => {});
+    // Bei einem Kind gehoeren sie dem Elternteil und bleiben dort liegen.
+    if (job.kind === "foto" && !job.parentId) await removePhotos(id).catch(() => {});
     deleteJob(id);
+
     return reply.code(204).send();
   });
 
@@ -300,6 +319,15 @@ export async function buildApp() {
     const { id } = request.params as { id: string };
     const job = getJob(id);
     if (!job) return reply.code(404).send({ error: "Job nicht gefunden." });
+
+    if (job.kind === "foto" && job.photosDeleted) {
+      return reply.code(409).send({
+        error:
+          "Die Fotos dieses Rezepts wurden nach dem erfolgreichen Durchlauf gelöscht. " +
+          "Für einen neuen Anlauf lade sie bitte erneut hoch. Das Rezept selbst " +
+          "kannst du hier weiterhin bearbeiten und nach Notion schreiben.",
+      });
+    }
 
     updateJob(id, { status: "queued", step: "Wartet", error: null });
     nudgeWorker();

@@ -1,5 +1,11 @@
 import { extract, detectPlatform, type ProgressFn } from "../extract/index.ts";
-import { readPhotos, modeFor, type RecipeMode } from "../extract/photo.ts";
+import {
+  readPhotos,
+  modeFor,
+  usableReadings,
+  type PhotoReading,
+  type RecipeMode,
+} from "../extract/photo.ts";
 import { extractRecipe } from "../llm/index.ts";
 import { getDataSourceSchema } from "../notion/client.ts";
 import { availableExtraFields, knownTags, knownOptions } from "../notion/mapper.ts";
@@ -18,13 +24,30 @@ export interface PipelineResult {
 }
 
 export interface PhotoPipelineInput {
-  /** Vollstaendige Pfade der hochgeladenen Bilder, in Reihenfolge. */
+  /** Vollstaendige Pfade der Bilder dieses Jobs, in Reihenfolge. */
   paths: string[];
+  /**
+   * Bereits gelesen. Bei einem Rezept aus einem Stapel hat der Elternteil die
+   * Bilder schon gelesen und aufgeteilt - dann faellt die Vision-Stufe weg.
+   */
+  reading?: PhotoReading;
   /** Bereits bestehende Notion-Seite dieses Jobs (zweiter Anlauf). */
   existingPageId?: string;
   onProgress?: ProgressFn;
   dryRun?: boolean;
 }
+
+/**
+ * Auf den Bildern lagen mehrere Rezepte. Daraus macht der Worker eigene Jobs -
+ * so bekommt jedes Rezept seine eigene Notion-Seite, seinen eigenen Eintrag im
+ * Verlauf und seine eigene Korrekturansicht.
+ */
+export interface PhotoSplit {
+  split: true;
+  readings: PhotoReading[];
+}
+
+export type PhotoOutcome = PipelineResult | PhotoSplit;
 
 /** Was in Notion oben auf der Seite steht, wenn die KI nachgeholfen hat. */
 function noticeFor(mode: RecipeMode, fehlt: string[]): string | undefined {
@@ -49,27 +72,43 @@ function noticeFor(mode: RecipeMode, fehlt: string[]): string | undefined {
  * Ab der Strukturierung ist es exakt dieselbe Strecke: gleicher Prompt,
  * gleiches Schema, gleiche Notion-Zuordnung.
  */
-export async function runPhotoPipeline(input: PhotoPipelineInput): Promise<PipelineResult> {
+export async function runPhotoPipeline(input: PhotoPipelineInput): Promise<PhotoOutcome> {
   const onProgress = input.onProgress ?? (() => {});
 
-  onProgress(input.paths.length > 1 ? "Fotos werden gelesen" : "Foto wird gelesen");
-  const reading = await readPhotos(input.paths);
+  let reading = input.reading;
+
+  if (!reading) {
+    onProgress(input.paths.length > 1 ? "Fotos werden gelesen" : "Foto wird gelesen");
+    const gelesen = await readPhotos(input.paths, onProgress);
+    const brauchbar = usableReadings(gelesen);
+
+    console.log(
+      `[foto] ${input.paths.length} Bild(er) gelesen: ${gelesen.length} Abschnitt(e), ` +
+        `davon ${brauchbar.length} brauchbar.`,
+    );
+
+    // Ein Buchdeckel oder ein Inhaltsverzeichnis ergibt kein Rezept. Das jetzt
+    // zu sagen ist ehrlicher, als die KI eines erfinden zu lassen.
+    if (!brauchbar.length) {
+      throw new Error(
+        "Auf den Fotos ist kein Rezept zu erkennen — und auch kein Gericht, aus dem " +
+          "sich eines ableiten ließe. Ist die Seite vollständig im Bild und gut " +
+          "ausgeleuchtet? Bei gewölbten Buchseiten hilft es, die Seite flach zu drücken.",
+      );
+    }
+
+    // Mehrere Rezepte: Der Worker macht daraus eigene Jobs. Hier ist Schluss.
+    if (brauchbar.length > 1) return { split: true, readings: brauchbar };
+
+    reading = brauchbar[0] as PhotoReading;
+  }
 
   const mode = modeFor(reading);
   console.log(
-    `[foto] ${input.paths.length} Bild(er), erkannt als "${reading.art}", Modus "${mode}"` +
+    `[foto] "${reading.titel ?? "ohne Titel"}": erkannt als "${reading.art}", ` +
+      `Modus "${mode}"` +
       (reading.fehlt.length ? `, fehlt: ${reading.fehlt.join(", ")}` : ""),
   );
-
-  // Ein Buchdeckel oder ein Inhaltsverzeichnis ergibt kein Rezept. Das jetzt zu
-  // sagen ist ehrlicher, als die KI eines erfinden zu lassen.
-  if (reading.art === "sonstiges" && reading.abschrift.length < 120) {
-    throw new Error(
-      "Auf den Fotos ist kein Rezept zu erkennen — und auch kein Gericht, aus dem " +
-        "sich eines ableiten ließe. Ist die Seite vollständig im Bild und gut " +
-        "ausgeleuchtet? Bei gewölbten Buchseiten hilft es, die Seite flach zu drücken.",
-    );
-  }
 
   onProgress("Rezept wird erstellt");
   const [schema, mapping] = await Promise.all([getDataSourceSchema(), loadMapping()]);
@@ -97,9 +136,7 @@ export async function runPhotoPipeline(input: PhotoPipelineInput): Promise<Pipel
   }
 
   const label =
-    input.paths.length > 1
-      ? `Eigenes Foto (${input.paths.length} Bilder)`
-      : "Eigenes Foto";
+    input.paths.length > 1 ? `Eigenes Foto (${input.paths.length} Bilder)` : "Eigenes Foto";
 
   onProgress(input.dryRun ? "Vorschau wird gebaut" : "Wird nach Notion geschrieben");
   const upsert = await upsertRecipe({
@@ -109,9 +146,7 @@ export async function runPhotoPipeline(input: PhotoPipelineInput): Promise<Pipel
     sourceTitle: reading.titel,
     existingPageId: input.existingPageId,
     coverFile:
-      reading.gerichtBildIndex !== undefined
-        ? input.paths[reading.gerichtBildIndex]
-        : undefined,
+      reading.gerichtBildIndex !== undefined ? input.paths[reading.gerichtBildIndex] : undefined,
     aiNotice: noticeFor(mode, reading.fehlt),
     transcript: reading.abschrift,
     transcriptSource: `Foto (${reading.art})`,

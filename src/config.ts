@@ -69,8 +69,26 @@ const ConfigSchema = z.object({
    * darf. Ein iPhone-Foto liegt bei 2-4 MB; die Web-App rechnet es vor dem
    * Hochladen ohnehin kleiner, der Wert ist die Obergrenze fuer alle Wege.
    */
-  maxPhotosPerJob: z.coerce.number().int().positive().default(6),
+  maxPhotosPerJob: z.coerce.number().int().positive().default(60),
   maxPhotoBytes: z.coerce.number().int().positive().default(12 * 1024 * 1024),
+  /**
+   * Wie viele Bilder pro Leseanfrage an das Modell gehen. Ein ganzes Kochbuch
+   * in einem Rutsch waere weder vom Kontext noch von der Sorgfalt her sinnvoll:
+   * Bei dreissig Seiten auf einmal faengt jedes Modell an, Rezepte
+   * zusammenzuziehen oder zu ueberspringen.
+   */
+  visionChunkSize: z.coerce.number().int().positive().default(4),
+  /**
+   * Bilder loeschen, sobald das Rezept in Notion steht. Das Titelbild liegt
+   * dann ohnehin bei Notion; auf der Platte haetten sie nur noch fuer einen
+   * zweiten Anlauf einen Zweck.
+   */
+  deletePhotosAfterSuccess: bool.default(true),
+  /**
+   * Alles, was trotzdem liegen bleibt - fehlgeschlagene Jobs, abgebrochene
+   * Uploads - wird nach so vielen Tagen weggeraeumt. 0 = niemals.
+   */
+  photoRetentionDays: z.coerce.number().int().nonnegative().default(14),
   /**
    * Leer = geminiModel. Ein eigenes Modell lohnt nur, wenn das Hauptmodell
    * keine Bilder kann.
@@ -138,6 +156,9 @@ export function getConfig(): Config {
     whisperComputeType: process.env.WHISPER_COMPUTE_TYPE,
     maxPhotosPerJob: process.env.MAX_PHOTOS_PER_JOB,
     maxPhotoBytes: process.env.MAX_PHOTO_BYTES,
+    visionChunkSize: process.env.VISION_CHUNK_SIZE,
+    deletePhotosAfterSuccess: process.env.DELETE_PHOTOS_AFTER_SUCCESS,
+    photoRetentionDays: process.env.PHOTO_RETENTION_DAYS,
     visionModel: process.env.VISION_MODEL,
     freeTextMinChars: process.env.FREE_TEXT_MIN_CHARS,
     tagsWithHash: process.env.TAGS_WITH_HASH,

@@ -1,4 +1,4 @@
-import { mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, writeFile, rm, readdir, stat } from "node:fs/promises";
 import { join, resolve, basename } from "node:path";
 import { getConfig } from "../config.ts";
 import { SUPPORTED_EXTENSIONS, mimeForFile } from "../lib/images.ts";
@@ -23,9 +23,20 @@ export function jobDir(jobId: string): string {
   return join(uploadsRoot(), basename(jobId));
 }
 
-export function photoPaths(jobId: string, names: string[]): string[] {
-  const dir = jobDir(jobId);
+export function photoPaths(ownerId: string, names: string[]): string[] {
+  const dir = jobDir(ownerId);
   return names.map((name) => join(dir, basename(name)));
+}
+
+/**
+ * Wem gehoeren die Bilder eines Jobs?
+ *
+ * Bei einem Rezept aus einem Stapel liegen sie beim Elternteil - sonst muesste
+ * ein abfotografiertes Kochbuch fuer jedes einzelne Rezept erneut auf die
+ * Platte geschrieben werden.
+ */
+export function photoOwner(job: { id: string; parentId: string | null }): string {
+  return job.parentId ?? job.id;
 }
 
 /** Prueft eine hochgeladene Datei, bevor sie auf der Platte landet. */
@@ -83,4 +94,41 @@ export async function savePhoto(
 /** Entfernt den Ordner eines Jobs samt Bildern. */
 export async function removePhotos(jobId: string): Promise<void> {
   await rm(jobDir(jobId), { recursive: true, force: true });
+}
+
+/** Wie viel Platz die Fotos belegen - fuer /api/health und die Protokollzeile. */
+export async function uploadsSize(): Promise<{ bytes: number; ordner: number }> {
+  let bytes = 0;
+  let ordner = 0;
+  try {
+    for (const name of await readdir(uploadsRoot())) {
+      ordner++;
+      const dir = join(uploadsRoot(), name);
+      for (const datei of await readdir(dir).catch(() => [])) {
+        bytes += (await stat(join(dir, datei)).catch(() => ({ size: 0 }))).size;
+      }
+    }
+  } catch {
+    /* Noch kein Upload-Ordner - dann belegt auch nichts Platz. */
+  }
+  return { bytes, ordner };
+}
+
+/**
+ * Ordner, die aelter sind als die Aufbewahrungsfrist.
+ *
+ * Gemeint sind die Reste: fehlgeschlagene Jobs, deren Bilder fuer einen
+ * zweiten Anlauf liegen blieben, und abgebrochene Uploads. Nach erfolgreichem
+ * Lauf sind die Bilder ohnehin schon weg.
+ */
+export async function expiredPhotoDirs(days: number): Promise<string[]> {
+  if (days <= 0) return [];
+  const grenze = Date.now() - days * 24 * 60 * 60 * 1000;
+  const alt: string[] = [];
+
+  for (const name of await readdir(uploadsRoot()).catch(() => [])) {
+    const info = await stat(join(uploadsRoot(), name)).catch(() => undefined);
+    if (info && info.mtimeMs < grenze) alt.push(name);
+  }
+  return alt;
 }

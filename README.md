@@ -195,12 +195,35 @@ Tracking gilt — dort kann ein Parameter wie `?seite=2` inhaltlich wichtig sein
 ## Abfotografierte Rezepte
 
 Kochbuchseite, Zeitschrift, handschriftliche Karte, Bildschirmfoto — in der Web-App
-unter **📷 Rezept abfotografieren**. Mehrere Bilder gehen, etwa bei einem Rezept über
-zwei Seiten; die Reihenfolge zählt und steht in der Vorschau.
+unter **📷 Rezept abfotografieren**.
+
+**Du musst nicht vorsortieren.** Fotografiere der Reihe nach und lade alles auf
+einmal hoch — bis zu `MAX_PHOTOS_PER_JOB` Bilder, standardmäßig 60. Die Aufteilung
+macht die Leseschicht:
+
+- Stehen **zwei Rezepte auf einer Seite**, werden daraus zwei Einträge.
+- Zieht sich **ein Rezept über zwei Seiten**, wird es wieder zusammengefügt.
+- **Vorwort, Register und Buchdeckel** werden übergangen, statt den Lauf abzubrechen.
+
+Aus einem Stapel mit mehreren Rezepten entstehen **eigenständige Jobs**: jeder mit
+eigener Notion-Seite, eigenem Eintrag im Verlauf und eigener Korrekturansicht. Der
+Stapel selbst bleibt als Sammeleintrag stehen (`12 Fotos → 7 Rezepte`); löschst du
+ihn, gehen die Einträge der Rezepte mit — die Notion-Seiten bleiben.
 
 Die Bilder werden **im Browser verkleinert**, bevor sie hochgeladen werden (lange
 Kante 1800 px, JPEG). Ein iPhone-Foto schrumpft damit von rund 3 MB auf gut 300 kB —
 über die VPN macht das den Unterschied zwischen „gleich da" und „lädt noch".
+
+### Warum blockweise gelesen wird
+
+Die Bilder gehen nicht alle in einer Anfrage ans Modell, sondern in Blöcken von
+`VISION_CHUNK_SIZE` (Standard 4). Dreißig Seiten auf einmal bringt jedes Modell dazu,
+Rezepte zusammenzuziehen oder zu überspringen.
+
+Damit ein Rezept an der Blockgrenze nicht in zwei Hälften zerfällt, meldet jeder
+Block, ob ein Rezept **vorher begonnen hat** oder **weitergeht**. Nur wenn beide
+Seiten das sagen, werden sie zusammengenäht — ein einseitiges Signal reicht nicht,
+sonst verschmölzen zwei unabhängige Rezepte.
 
 ### Abtippen oder ergänzen?
 
@@ -224,12 +247,35 @@ Zeigt eines der Bilder das **fertige Gericht** (nicht eine bedruckte Seite mit e
 Foto darauf), wird genau dieses Bild das Titelbild der Notion-Seite. Das entscheidet
 dieselbe Anfrage, die auch den Text liest — es kostet also keine zusätzliche.
 
-### Was aufgehoben wird
+### Was mit den Bildern passiert
 
-Die hochgeladenen Bilder bleiben unter `data/uploads/<job-id>/` liegen. Damit
-funktioniert **„Erneut versuchen"**, ohne dass du noch einmal fotografieren musst,
-und in der Detailansicht siehst du, was das Modell eigentlich vor sich hatte.
-Beim Löschen eines Eintrags gehen sie mit.
+Sie liegen unter `data/uploads/<job-id>/` — aber **nur so lange sie gebraucht
+werden**:
+
+| Wann | Was passiert |
+|---|---|
+| Rezept steht in Notion | Bilder werden **gelöscht**. Das Titelbild liegt dann ohnehin bei Notion. |
+| Job fehlgeschlagen | Bilder **bleiben**, damit „Erneut versuchen" ohne neues Fotografieren geht. |
+| Stapel mit mehreren Rezepten | Bilder bleiben, bis **alle** Rezepte daraus durch sind — wer zuerst fertig ist, nimmt sie den anderen nicht weg. |
+| Nach `PHOTO_RETENTION_DAYS` | Reste werden beim Start weggeräumt (Standard 14 Tage, `0` = nie). |
+| Eintrag gelöscht | Bilder gehen mit. |
+
+So wächst der Datenordner nicht still vor sich hin. Beim Start steht im Log, wie viel
+dort liegt:
+
+```
+[uploads] 4.2 MB in 3 Ordner(n).
+```
+
+Dasselbe zeigt `/api/health` unter `uploads`.
+
+Willst du die Bilder behalten, setze `DELETE_PHOTOS_AFTER_SUCCESS=false`. Dann greift
+nur noch die Aufbewahrungsfrist.
+
+> Nach dem Löschen ist **„Erneut versuchen"** für dieses Rezept nicht mehr möglich —
+> die Web-App blendet den Knopf dann aus und sagt warum. Das **Rezept** kannst du
+> weiterhin bearbeiten und erneut nach Notion schreiben; dafür braucht es die Bilder
+> nicht.
 
 > **Ohne `GEMINI_API_KEY`** gibt es keine Foto-Funktion — die Karte wird dann in der
 > Web-App gar nicht erst angezeigt, statt dass der Fehler erst nach dem Hochladen
@@ -383,7 +429,10 @@ Alles über die `.env`, Vorlage in [`.env.example`](.env.example). Die wichtigst
 | `GEMINI_FALLBACK_MODEL` | `gemini-3.6-flash` | Ausweichmodell bei Überlastung |
 | `GEMINI_TRANSCRIBE_MODEL` | `gemini-3.5-transcribe` | nur bei `TRANSCRIBE_PROVIDER=gemini` |
 | `COVER_SOURCE` | `thumbnail` | `thumbnail`, `ai`, `thumbnail+ai` oder `none` |
-| `MAX_PHOTOS_PER_JOB` | `6` | wie viele Bilder ein abfotografiertes Rezept haben darf |
+| `MAX_PHOTOS_PER_JOB` | `60` | wie viele Bilder auf einmal hochgeladen werden dürfen |
+| `VISION_CHUNK_SIZE` | `4` | wie viele Bilder pro Leseanfrage ans Modell gehen |
+| `DELETE_PHOTOS_AFTER_SUCCESS` | `true` | Bilder löschen, sobald das Rezept in Notion steht |
+| `PHOTO_RETENTION_DAYS` | `14` | nach wie vielen Tagen liegengebliebene Bilder verschwinden (`0` = nie) |
 | `MAX_PHOTO_BYTES` | `12582912` | Obergrenze je Bild (12 MB); die Web-App verkleinert ohnehin vorher |
 | `VISION_MODEL` | *(leer)* | eigenes Modell zum Lesen der Fotos; leer = `GEMINI_MODEL` |
 | `IMAGE_MODEL` | — | Bildmodell für `ai` (`npm run models` zeigt die Namen) |
