@@ -135,6 +135,18 @@ function run(
  */
 export function explainError(stderr: string): string {
   const s = stderr.toLowerCase();
+  // TikTok sperrt Videos, die es als heikel einstuft (Alkohol, Messer, Fleisch
+  // roh im Bild - bei Rezepten gar nicht so selten), hinter einen Login. Das
+  // ist keine Ueberlastung und kein kaputter Extraktor: Ohne angemeldetes
+  // Konto gibt TikTok das Video schlicht nicht heraus.
+  if (s.includes("may not be comfortable for some audiences") ||
+      (s.includes("tiktok") && s.includes("log in for access"))) {
+    return (
+      "TikTok zeigt dieses Video nur angemeldeten Nutzern (als „nicht für alle " +
+      "geeignet“ markiert). Hinterlege TikTok-Cookies in config/cookies.txt — " +
+      "siehe docs/cookies.md, Abschnitt TikTok. Danach „Erneut versuchen“."
+    );
+  }
   if (s.includes("login required") || s.includes("requested content is not available") ||
       s.includes("rate-limit reached") || s.includes("empty media response")) {
     return (

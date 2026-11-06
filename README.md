@@ -124,7 +124,7 @@ zum Kopieren — mit deiner echten Adresse und deinem Token bereits eingesetzt.
 | Notion-Integration-Token | [notion.so/profile/integrations](https://www.notion.so/profile/integrations) | — |
 | Notion-Datenbank-ID | aus der URL deiner Datenbank | — |
 | Gemini-API-Key | [aistudio.google.com](https://aistudio.google.com) → *Get API key* | kostenlos, ohne Kreditkarte |
-| `cookies.txt` *(optional)* | nur für Instagram nötig | — |
+| `cookies.txt` *(optional)* | für Instagram, als heikel markierte TikTok-Videos und gesperrtes YouTube | — |
 
 Details: [`docs/notion.md`](docs/notion.md)
 
@@ -138,7 +138,7 @@ Details: [`docs/notion.md`](docs/notion.md)
 | Kurzbefehl fürs Teilen-Menü bauen | [`docs/ios-shortcut.md`](docs/ios-shortcut.md) |
 | VPN so einstellen, dass sie anbleiben kann | [`docs/vpn-zugriff.md`](docs/vpn-zugriff.md) |
 | HTTPS über Tailscale *(optional)* | [`docs/tailscale.md`](docs/tailscale.md) |
-| Instagram-Cookies hinterlegen | [`docs/cookies.md`](docs/cookies.md) |
+| Cookies hinterlegen (Instagram, TikTok, YouTube) | [`docs/cookies.md`](docs/cookies.md) |
 
 ## Pinterest
 
