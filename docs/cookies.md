@@ -1,4 +1,4 @@
-# Cookies für Instagram und YouTube
+# Cookies für Instagram, TikTok und YouTube
 
 Manche öffentlichen Instagram-Reels lassen sich auch ohne Login abrufen — probier es
 also erst einmal ohne. Verlangt Instagram einen Login (was bei privaten Konten und
@@ -7,7 +7,13 @@ bei häufigen Abrufen von derselben Adresse passiert), hilft nur eine `cookies.t
 YouTube fragt zunehmend ebenfalls nach, besonders bei Zugriffen aus Rechenzentren
 und von Servern, die häufig abrufen.
 
-TikTok, Pinterest und die meisten Food-Blogs funktionieren ohne.
+TikTok funktioniert meist ohne — **außer** bei Videos, die TikTok als „nicht für alle
+geeignet" markiert. Das trifft bei Rezepten öfter, als man denkt: Alkohol, ein großes
+Messer, rohes Fleisch im Bild reichen. Die Web-App meldet dann:
+
+> TikTok zeigt dieses Video nur angemeldeten Nutzern …
+
+Pinterest und die meisten Food-Blogs funktionieren ohne.
 
 ## Cookies exportieren
 
@@ -29,6 +35,45 @@ docker compose restart app
 Die Datei wird automatisch erkannt — sie muss unter `config/cookies.txt` liegen (oder
 dort, wohin `COOKIES_FILE` in der `.env` zeigt).
 
+## Mehrere Plattformen in einer Datei
+
+Es gibt nur **eine** `cookies.txt` — für Instagram, TikTok und YouTube zusammen. Das
+Format ist zeilenweise, Dateien lassen sich deshalb einfach aneinanderhängen.
+
+Exportiere auf jeder Seite einzeln (auf tiktok.com angemeldet → Erweiterung →
+**Export**) und füge die Dateien zusammen:
+
+```bash
+# auf dem Server, im Projektordner
+cat tiktok-cookies.txt >> config/cookies.txt
+docker compose restart app
+```
+
+Die Kopfzeile `# Netscape HTTP Cookie File` darf dabei doppelt vorkommen — Zeilen mit
+`#` werden ignoriert.
+
+Hast du noch gar keine `cookies.txt`, reicht:
+
+```bash
+cp tiktok-cookies.txt config/cookies.txt
+docker compose restart app
+```
+
+Prüfen, ob TikTok-Cookies drin sind:
+
+```bash
+grep -c tiktok.com config/cookies.txt
+```
+
+Eine Zahl größer 0 heißt: ja.
+
+## TikTok
+
+Zum Anmelden genügt ein Konto, das das Alter bestätigt hat — sonst bleiben die als
+heikel markierten Videos auch angemeldet gesperrt. TikTok-Sitzungen halten erfahrungs­
+gemäß einige Wochen; läuft eine ab, kommt dieselbe Meldung wieder, und du exportierst
+neu.
+
 ## Alternative: direkt aus dem Browser auf dem Server
 
 Läuft auf dem Server ein Firefox mit angemeldetem Konto:
@@ -41,8 +86,8 @@ Das ist auf einem LXC ohne Oberfläche allerdings selten der Fall.
 
 ## Sicherheit
 
-`config/cookies.txt` enthält gültige Anmelde-Sitzungen für dein Konto. Wer die Datei
-hat, ist bei Instagram als du angemeldet.
+`config/cookies.txt` enthält gültige Anmelde-Sitzungen für deine Konten. Wer die Datei
+hat, ist bei Instagram, TikTok bzw. YouTube als du angemeldet.
 
 - Die Datei steht in `.gitignore` und landet **nicht** im Repository
 - Sie liegt nur auf deinem eigenen Server
