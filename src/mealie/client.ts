@@ -66,7 +66,8 @@ function detailOf(body: string): string {
 
 export interface MealieRequest {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  query?: Record<string, string | number | undefined>;
+  /** Ein Array wird als wiederholter Parameter geschickt: foods=a&foods=b. */
+  query?: Record<string, string | number | boolean | string[] | undefined>;
   json?: unknown;
   form?: FormData;
 }
@@ -77,7 +78,9 @@ export async function mealie<T = unknown>(path: string, req: MealieRequest = {})
 
   const url = new URL(`${cfg.mealieUrl}/api${path}`);
   for (const [k, v] of Object.entries(req.query ?? {})) {
-    if (v !== undefined) url.searchParams.set(k, String(v));
+    if (v === undefined) continue;
+    if (Array.isArray(v)) for (const x of v) url.searchParams.append(k, x);
+    else url.searchParams.set(k, String(v));
   }
 
   const headers: Record<string, string> = {
@@ -145,6 +148,7 @@ export interface MealieSelf {
   email?: string;
   groupSlug: string;
   household?: string;
+  householdSlug?: string;
 }
 
 let selfCache: MealieSelf | undefined;

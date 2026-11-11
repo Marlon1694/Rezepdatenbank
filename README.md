@@ -223,6 +223,15 @@ im anderen. Der Verlauf zeigt dann „⚠️ fehlt in Mealie", und **In Mealie
 nachtragen** schreibt das fertige Rezept dorthin — ohne neue KI-Anfrage und ohne
 das andere Ziel anzufassen.
 
+Mit Mealie kommt in der Web-App eine Karte **🍽️ Küche** dazu:
+
+- **Wochenplan** — die KI plant aus deinen Rezepten und meidet, was zuletzt dran war; erst „Übernehmen" schreibt in Mealie
+- **Einkauf** — alle Zutaten der Woche zusammengefasst, Vorrätiges abgewählt; erst „Freigeben" schreibt in die Einkaufsliste, von der Atelier nach Bring! synchronisiert
+- **Was kochen?** — passende Rezepte zu dem, was da ist
+
+Direkt verlinkbar als `…/#wochenplan`, `…/#einkauf`, `…/#kochen` — etwa aus einer
+Home-Assistant-Benachrichtigung am Sonntag (Beispiel in `docs/mealie.md`).
+
 Den Bestand übernimmt `npm run migrate:mealie` (erst Probelauf, dann mit
 `-- --ausfuehren`). Mit `NOTION_ENABLED=false` geht später alles nur noch nach
 Mealie.
@@ -465,6 +474,8 @@ Alles über die `.env`, Vorlage in [`.env.example`](.env.example). Die wichtigst
 | `GEMINI_TRANSCRIBE_MODEL` | `gemini-3.5-transcribe` | nur bei `TRANSCRIBE_PROVIDER=gemini` |
 | `MEALIE_URL` | *(leer)* | Adresse von Mealie mit Port, z.B. `http://192.168.2.227:9925` — nicht `localhost` |
 | `MEALIE_API_TOKEN` | *(leer)* | API-Token aus Mealie (Profil → API-Token) |
+| `MEALIE_SHOPPING_LIST` | `Wocheneinkauf` | Mealie-Liste für freigegebene Zutaten — die Quelle der Bring!-Regel |
+| `STAPLES` | `Salz,Pfeffer,…` | Grundausstattung, beim Einkauf vorab abgewählt (nur Zutaten ohne Lebensmittel-Zuordnung) |
 | `NOTION_ENABLED` | `true` | `false` = nur noch Mealie; Notion-Token und -ID sind dann nicht mehr nötig |
 | `COVER_SOURCE` | `thumbnail` | `thumbnail`, `ai`, `thumbnail+ai` oder `none` |
 | `MAX_PHOTOS_PER_JOB` | `60` | wie viele Bilder auf einmal hochgeladen werden dürfen |
@@ -499,11 +510,11 @@ src/
   transcribe/        faster-whisper (lokal) | Gemini
   llm/               Prompt-Aufbau, Gemini, Rezept-Schema
   notion/            Client, Spalten-Zuordnung, Blöcke, Upsert
-  mealie/            Client, Zuordnung, Anlegen/Aktualisieren
+  mealie/            Client, Zuordnung, Anlegen/Aktualisieren, Wochenplan, Einkauf
   targets.ts         schreibt in Notion und/oder Mealie, unabhängig voneinander
   migrate/           Notion-Seiten zurücklesen (für die Übernahme)
   jobs/              SQLite-Queue, Worker, Pipeline, Foto-Ablage
-  web/               PWA ohne Build-Schritt
+  web/               PWA ohne Build-Schritt (app.js, kitchen.js)
 prompts/recipe.de.md ► dein Prompt
 config/              notion-mapping.json, cookies.txt, ts-serve.json
 ```

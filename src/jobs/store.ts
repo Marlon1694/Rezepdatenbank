@@ -139,7 +139,39 @@ function connect(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_jobs_status  ON jobs(status);
   `);
   migrate(db);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS approvals (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      start_date TEXT NOT NULL,
+      end_date   TEXT NOT NULL,
+      lines      INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
   return db;
+}
+
+/**
+ * Freigegebene Einkaeufe. Nur ein Protokoll - es verhindert nichts, aber die
+ * Web-App kann warnen, bevor dieselbe Woche ein zweites Mal in der
+ * Einkaufsliste landet.
+ */
+export function recordApproval(start: string, end: string, lines: number): void {
+  connect()
+    .prepare(`INSERT INTO approvals (start_date, end_date, lines, created_at) VALUES (?, ?, ?, ?)`)
+    .run(start, end, lines, new Date().toISOString());
+}
+
+export function approvalsOverlapping(
+  start: string,
+  end: string,
+): { start: string; end: string; lines: number; createdAt: string }[] {
+  return connect()
+    .prepare(
+      `SELECT start_date AS start, end_date AS end, lines, created_at AS createdAt
+       FROM approvals WHERE start_date <= ? AND end_date >= ? ORDER BY created_at DESC`,
+    )
+    .all(end, start) as { start: string; end: string; lines: number; createdAt: string }[];
 }
 
 /**

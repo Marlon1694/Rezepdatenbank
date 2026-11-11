@@ -42,6 +42,7 @@ function showSetup(message) {
   $("setup").hidden = false;
   $("submit").hidden = true;
   $("photoCard").hidden = true;
+  $("kitchenCard").hidden = true;
   $("listSection").hidden = true;
   const err = $("setupError");
   err.hidden = !message;
@@ -65,6 +66,8 @@ async function checkPhotoSupport() {
     const health = await res.json();
     $("photoCard").hidden = !health.fotos;
     if (health.maxPhotos) maxPhotos = health.maxPhotos;
+    // Wochenplan, Einkauf und "Was kochen?" laufen über Mealie.
+    if (typeof kitchenInit === "function") kitchenInit(health);
   } catch {
     $("photoCard").hidden = true;
   }
@@ -792,6 +795,9 @@ function field(el) {
 
 function closeDetail() {
   releaseObjektUrls();
+  // Eine per Link geöffnete Küchen-Ansicht (#einkauf) soll beim Neuladen
+  // nicht wieder aufgehen.
+  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
   $("overlay").hidden = true;
   document.body.style.overflow = "";
   openJobId = null;

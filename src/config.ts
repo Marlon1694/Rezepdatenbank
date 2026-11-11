@@ -53,6 +53,21 @@ const ConfigSchema = z.object({
     .default("")
     .transform((v) => v.trim().replace(/\/+$/, "")),
   mealieApiToken: z.string().default(""),
+  /**
+   * Die Mealie-Einkaufsliste, in die freigegebene Zutaten kommen. Fuer genau
+   * diese Liste gibt es in Atelier die Sync-Regel nach Bring! - so geht nichts
+   * nach Bring!, das du nicht freigegeben hast.
+   */
+  mealieShoppingList: z.string().default("Wocheneinkauf"),
+  /**
+   * Was fast immer im Haus ist und deshalb beim Einkauf vorab abgewaehlt wird.
+   * Gilt nur fuer Zutaten ohne Zuordnung zu einem Lebensmittel - fuer alle
+   * anderen zaehlt das Kennzeichen "Vorraetig" in Mealie.
+   */
+  staples: z
+    .string()
+    .default("Salz,Pfeffer,Wasser,Öl,Olivenöl,Sonnenblumenöl,Rapsöl")
+    .transform((v) => v.split(",").map((s) => s.trim()).filter(Boolean)),
 
   geminiApiKey: z.string().default(""),
   // Feste Versionen statt "-latest": Letztere zeigen laut Google auf
@@ -201,6 +216,8 @@ export function getConfig(): Config {
     notionDatabaseId: process.env.NOTION_DATABASE_ID,
     mealieUrl: process.env.MEALIE_URL,
     mealieApiToken: process.env.MEALIE_API_TOKEN,
+    mealieShoppingList: process.env.MEALIE_SHOPPING_LIST,
+    staples: process.env.STAPLES,
     geminiApiKey: process.env.GEMINI_API_KEY,
     geminiModel: process.env.GEMINI_MODEL,
     geminiFallbackModel: process.env.GEMINI_FALLBACK_MODEL,

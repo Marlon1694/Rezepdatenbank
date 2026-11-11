@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyReply } from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyMultipart from "@fastify/multipart";
 import { createReadStream } from "node:fs";
@@ -15,6 +15,8 @@ import {
   deleteJob,
   updateJob,
   childrenOf,
+  recordApproval,
+  approvalsOverlapping,
 } from "./jobs/store.ts";
 import {
   checkPhoto,
@@ -29,6 +31,18 @@ import { startWorker, nudgeWorker } from "./jobs/worker.ts";
 import { republish } from "./jobs/republish.ts";
 import { activeTargets, type Target } from "./targets.ts";
 import { mealieEnabled, mealieSelf } from "./mealie/client.ts";
+import {
+  shoppingPreview,
+  approveShopping,
+  suggestPlan,
+  alternative,
+  applyPlan,
+  cookSuggestions,
+  today,
+  ENTRY_TYPES,
+  type EntryType,
+} from "./mealie/kitchen.ts";
+import { addDays } from "./mealie/planner.ts";
 import { getDataSourceSchema } from "./notion/client.ts";
 import { loadMapping } from "./jobs/mapping.ts";
 import { RecipeSchema } from "./llm/recipeSchema.ts";
@@ -137,6 +151,106 @@ export async function buildApp() {
     // /api/mealie bzw. /api/notion - hier bleibt es ohne Netzanfrage.
     targets: activeTargets(),
   }));
+
+  /* ── Kueche: Wochenplan, Einkauf, Was kann ich kochen ─────────────────── */
+
+  const DATUM = /^\d{4}-\d{2}-\d{2}$/;
+  /** Gemeinsame Pruefung: Mealie da, Zeitraum gueltig. */
+  function zeitraum(q: Record<string, unknown>, reply: FastifyReply) {
+    if (!mealieEnabled()) {
+      reply.code(404).send({ error: "Dafür muss Mealie eingerichtet sein (MEALIE_URL, MEALIE_API_TOKEN)." });
+      return undefined;
+    }
+    const start = typeof q.start === "string" && DATUM.test(q.start) ? q.start : today();
+    const days = Math.min(Math.max(Number(q.days) || 7, 1), 14);
+    const typ = ENTRY_TYPES.includes(q.type as EntryType) ? (q.type as EntryType) : "dinner";
+    return { start, days, typ, end: addDays(start, days - 1) };
+  }
+  const fehler = (reply: FastifyReply, err: unknown) =>
+    reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+
+  app.get("/api/kitchen/shopping", async (request, reply) => {
+    const z = zeitraum(request.query as Record<string, unknown>, reply);
+    if (!z) return;
+    try {
+      const preview = await shoppingPreview(z.start, z.days);
+      return { ...preview, approvals: approvalsOverlapping(z.start, z.end) };
+    } catch (err) {
+      return fehler(reply, err);
+    }
+  });
+
+  app.post("/api/kitchen/shopping", async (request, reply) => {
+    const body = (request.body ?? {}) as { start?: string; days?: number; keys?: unknown };
+    const z = zeitraum(body as Record<string, unknown>, reply);
+    if (!z) return;
+    if (!Array.isArray(body.keys) || !body.keys.every((k) => typeof k === "string")) {
+      return reply.code(400).send({ error: "Es fehlt die Auswahl der Zutaten." });
+    }
+    try {
+      const r = await approveShopping(z.start, z.days, body.keys as string[]);
+      recordApproval(z.start, z.end, r.lines);
+      return r;
+    } catch (err) {
+      return fehler(reply, err);
+    }
+  });
+
+  app.post("/api/kitchen/plan/suggest", async (request, reply) => {
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const z = zeitraum(body, reply);
+    if (!z) return;
+    try {
+      return await suggestPlan(z.start, z.days, z.typ, typeof body.wishes === "string" ? body.wishes : "");
+    } catch (err) {
+      return fehler(reply, err);
+    }
+  });
+
+  app.post("/api/kitchen/plan/alternative", async (request, reply) => {
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const z = zeitraum(body, reply);
+    if (!z) return;
+    const exclude = Array.isArray(body.exclude) ? body.exclude.filter((x) => typeof x === "string") : [];
+    try {
+      const alt = await alternative(z.start, z.days, z.typ, exclude as string[]);
+      if (!alt) return reply.code(404).send({ error: "Keine weiteren Rezepte zur Auswahl." });
+      return alt;
+    } catch (err) {
+      return fehler(reply, err);
+    }
+  });
+
+  app.post("/api/kitchen/plan/apply", async (request, reply) => {
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const z = zeitraum(body, reply);
+    if (!z) return;
+    const entries = Array.isArray(body.entries)
+      ? (body.entries as { date?: unknown; recipeId?: unknown }[]).filter(
+          (e): e is { date: string; recipeId: string } =>
+            typeof e.date === "string" && DATUM.test(e.date) && typeof e.recipeId === "string",
+        )
+      : [];
+    if (!entries.length) return reply.code(400).send({ error: "Der Plan ist leer." });
+    try {
+      return { added: await applyPlan(entries, z.typ) };
+    } catch (err) {
+      return fehler(reply, err);
+    }
+  });
+
+  app.get("/api/kitchen/cook", async (request, reply) => {
+    if (!mealieEnabled()) {
+      return reply.code(404).send({ error: "Dafür muss Mealie eingerichtet sein." });
+    }
+    const q = request.query as { have?: string; missing?: string };
+    if (!q.have?.trim()) return reply.code(400).send({ error: "Was ist denn da?" });
+    try {
+      return await cookSuggestions(q.have, Math.min(Math.max(Number(q.missing) || 3, 0), 10));
+    } catch (err) {
+      return fehler(reply, err);
+    }
+  });
 
   /** Prueft die Mealie-Verbindung: Adresse erreichbar, Token gueltig, wessen Konto. */
   app.get("/api/mealie", async (_request, reply) => {

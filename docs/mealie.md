@@ -147,18 +147,62 @@ Sonntags-Nachricht.
 2. In Bring! eine **eigene, leere Liste** anlegen, z.B. „Mealie" — für den Anfang
    nicht deine Hauptliste.
 3. In der Atelier-Karte: *Einkaufsliste → Einkaufs-Sync → Sync-Regel hinzufügen*
-   - Quelle: deine Mealie-Einkaufsliste
+   - Quelle: **Wocheneinkauf** (die Liste legt die App beim ersten Freigeben selbst
+     an — gibt es sie noch nicht, einmal in der App einen Einkauf freigeben oder
+     sie in Mealie von Hand anlegen)
    - Ziel: die neue Bring!-Liste
    - Modus: **Kopieren**
+   - Wann: **„Auf Änderungen an anderer Stelle achten" einschalten.** Wichtig: Die
+     App schreibt direkt in Mealie, nicht über Atelier. Ohne diesen Haken bemerkt
+     Atelier die freigegebenen Zutaten nicht.
    - Duplikate: **Identische überspringen und gleiche Einheiten zusammenfassen**
 4. Vorschau ansehen → ersten Stapel bestätigen.
 
-Test: In Mealie bei einem Rezept *Zutaten einkaufen* → nach etwa 30 Sekunden
-stehen sie in Bring!.
+So kommt **nur nach Bring!, was du freigegeben hast**: Die App schreibt erst nach
+deiner Freigabe in „Wocheneinkauf", und nur diese Liste hat eine Regel nach Bring!.
 
-> **Die Freigabe vor dem Einkauf** (Wochenplan → Zutaten prüfen → erst dann nach
-> Bring!) kommt als eigener Schritt. Dafür bekommt die Sync-Regel später eine
-> eigene Quellliste. Für heute reicht der einfache Weg.
+## Wochenplan, Einkauf, Was kochen?
+
+In der Web-App gibt es mit Mealie eine Karte **🍽️ Küche**:
+
+| | |
+|---|---|
+| **📅 Wochenplan** | Die KI wählt aus deinen Mealie-Rezepten und meidet, was in den letzten Wochen schon dran war. Unter der Woche eher Schnelles, am Wochenende Aufwendigeres, dazu deine Wünsche („freitags Fisch"). Einzelne Tage lassen sich tauschen oder freilassen. Erst **Übernehmen** schreibt in den Mealie-Plan. Bereits Geplantes bleibt unangetastet. Ist die KI nicht erreichbar, plant die App nach „am längsten nicht gegessen" und sagt das dazu. |
+| **🛒 Einkauf** | Alle Zutaten der geplanten Gerichte, über die Woche zusammengefasst und mit dem Portionsfaktor aus dem Plan gerechnet. Was in Mealie als **vorrätig** markiert ist (Lebensmittel → „Vorrätig"), ist abgewählt, ebenso Salz, Pfeffer, Öl. **Freigeben** schreibt in „Wocheneinkauf" — und Atelier von dort nach Bring!. Gibst du dieselbe Woche zweimal frei, warnt die App vorher. |
+| **🥕 Was kochen?** | Eingeben, was da ist — Mealie sucht passende Rezepte und sagt, was fehlt. |
+
+Den Grundvorrat pflegst du am besten **in Mealie**: *Datenverwaltung → Lebensmittel*
+→ bei Butter, Mehl, Zucker usw. „Vorrätig" anhaken. Das zählt dann für den Einkauf
+und für „Was kochen?".
+
+## Sonntags: Einkauf prüfen
+
+Eine Home-Assistant-Automation erinnert dich und öffnet mit einem Tipp direkt die
+Freigabe. *Einstellungen → Automationen → Neu → YAML bearbeiten*:
+
+```yaml
+alias: Wocheneinkauf prüfen
+triggers:
+  - trigger: time
+    at: "17:00:00"
+conditions:
+  - condition: time
+    weekday: [sun]
+actions:
+  - action: notify.mobile_app_DEIN_IPHONE
+    data:
+      title: "🛒 Wocheneinkauf"
+      message: "Wochenplan prüfen und Zutaten freigeben"
+      data:
+        url: "http://192.168.2.227:3000/#einkauf"
+```
+
+`DEIN_IPHONE` ersetzt du durch den Namen aus *Einstellungen → Geräte & Dienste →
+Mobile App*. Lieber erst planen? Dann `#wochenplan` statt `#einkauf`.
+
+> **Beim ersten Antippen** öffnet iOS den Link in Safari, nicht in der App auf dem
+> Home-Bildschirm. Safari kennt dein Zugriffs-Token noch nicht — einmal eingeben,
+> danach merkt Safari es sich.
 
 ## 7. Bestand übernehmen
 
