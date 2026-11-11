@@ -43,6 +43,8 @@ vi.mock("../src/llm/gemini.ts", () => ({
 const angelegteSeiten: Array<{ titel: string }> = [];
 
 vi.mock("../src/notion/upsert.ts", () => ({
+  // Kein Titelbild in diesem Test - es geht um die Aufteilung.
+  resolveCover: vi.fn(async () => undefined),
   upsertRecipe: vi.fn(async (input: { recipe: { titel: string } }) => {
     angelegteSeiten.push({ titel: input.recipe.titel });
     return {

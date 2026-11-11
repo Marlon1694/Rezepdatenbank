@@ -280,3 +280,7 @@ details.transcript pre {
 }
 
 .thumb-del:hover { background: #000d; }
+
+/* Die Ziel-Links stehen rechts zusammen, "Zurück" bleibt links. */
+.sheet-head #notionLink { margin-left: auto; }
+.sheet-head #notionLink[hidden] + #mealieLink { margin-left: auto; }

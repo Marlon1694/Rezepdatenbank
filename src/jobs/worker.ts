@@ -114,7 +114,7 @@ async function processOne(): Promise<boolean> {
       throw new Error(
         "Die Fotos dieses Rezepts wurden nach dem erfolgreichen Durchlauf gelöscht. " +
           "Für einen neuen Anlauf müsstest du sie noch einmal hochladen. Das Rezept " +
-          "selbst kannst du hier weiterhin bearbeiten und erneut nach Notion schreiben.",
+          "selbst kannst du hier weiterhin bearbeiten und erneut speichern.",
       );
     }
 
@@ -127,35 +127,58 @@ async function processOne(): Promise<boolean> {
             // zweite anzulegen: Ein Foto hat keine Quell-URL, ueber die der
             // Duplikat-Check sie wiederfinden koennte.
             existingPageId: job.notionPageId ?? undefined,
+            existingMealieSlug: job.mealieSlug ?? undefined,
             onProgress,
           })
-        : await runPipeline(job.url, onProgress);
+        : await runPipeline(job.url, onProgress, false, {
+            existingMealieSlug: job.mealieSlug ?? undefined,
+          });
 
     if ("split" in result) {
       await splitIntoChildren(job, result.readings, startedAt);
       return true;
     }
 
+    const { publish } = result;
+    const teilfehler = Object.keys(publish.errors).length > 0;
+
     updateJob(job.id, {
       status: "done",
-      step: result.upsert.updated ? "Aktualisiert" : "Angelegt",
+      step: teilfehler
+        ? "Teilweise gespeichert"
+        : publish.updated
+          ? "Aktualisiert"
+          : "Angelegt",
       title: result.recipe.titel,
       platform: result.platform,
       textSource: result.textSource,
       transcript: result.transcript,
       recipe: result.recipe,
-      notionPageId: result.upsert.pageId ?? null,
-      notionPageUrl: result.upsert.pageUrl ?? null,
-      notionUpdated: result.upsert.updated,
+      // Ein Ziel, das diesmal nicht dran war, behaelt seinen alten Stand.
+      ...(publish.notion
+        ? {
+            notionPageId: publish.notion.pageId ?? null,
+            notionPageUrl: publish.notion.pageUrl ?? null,
+            notionUpdated: publish.notion.updated,
+          }
+        : {}),
+      ...(publish.mealie
+        ? { mealieSlug: publish.mealie.slug, mealieUrl: publish.mealie.url }
+        : {}),
+      targetErrors: publish.errors,
+      coverRef: result.coverRef ?? null,
       durationMs: Date.now() - startedAt,
     });
 
     console.log(
       `[worker] ${job.id} fertig in ${((Date.now() - startedAt) / 1000).toFixed(1)}s ` +
-        `(${result.textSource})`,
+        `(${result.textSource})` +
+        (teilfehler ? ` - nicht gespeichert in: ${Object.keys(publish.errors).join(", ")}` : ""),
     );
 
-    await cleanupAfterSuccess({ ...job, status: "done" });
+    // Fehlt ein Ziel noch, werden die Fotos fuer den Nachtrag gebraucht -
+    // sonst fehlte dort das Titelbild.
+    if (!teilfehler) await cleanupAfterSuccess({ ...job, status: "done" });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     updateJob(job.id, {

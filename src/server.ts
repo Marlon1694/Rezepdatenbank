@@ -26,7 +26,9 @@ import {
 } from "./jobs/uploads.ts";
 import { mimeForFile } from "./lib/images.ts";
 import { startWorker, nudgeWorker } from "./jobs/worker.ts";
-import { upsertRecipe } from "./notion/upsert.ts";
+import { republish } from "./jobs/republish.ts";
+import { activeTargets, type Target } from "./targets.ts";
+import { mealieEnabled, mealieSelf } from "./mealie/client.ts";
 import { getDataSourceSchema } from "./notion/client.ts";
 import { loadMapping } from "./jobs/mapping.ts";
 import { RecipeSchema } from "./llm/recipeSchema.ts";
@@ -131,10 +133,37 @@ export async function buildApp() {
     // Damit sichtbar ist, ob sich auf der Platte etwas ansammelt.
     uploads: await uploadsSize(),
     photoRetentionDays: cfg.photoRetentionDays,
+    // Wohin Rezepte geschrieben werden. Ob die Verbindung steht, zeigt
+    // /api/mealie bzw. /api/notion - hier bleibt es ohne Netzanfrage.
+    targets: activeTargets(),
   }));
+
+  /** Prueft die Mealie-Verbindung: Adresse erreichbar, Token gueltig, wessen Konto. */
+  app.get("/api/mealie", async (_request, reply) => {
+    if (!mealieEnabled()) {
+      return reply.code(404).send({
+        error: "Mealie ist nicht eingerichtet. MEALIE_URL und MEALIE_API_TOKEN in der .env setzen.",
+      });
+    }
+    try {
+      const self = await mealieSelf();
+      return {
+        ok: true,
+        url: cfg.mealieUrl,
+        user: self.username ?? self.email,
+        group: self.groupSlug,
+        household: self.household,
+      };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
 
   /** Prueft die Notion-Verbindung und zeigt das erkannte Schema. */
   app.get("/api/notion", async (_request, reply) => {
+    if (!cfg.notionEnabled) {
+      return reply.code(404).send({ error: "Notion ist abgeschaltet (NOTION_ENABLED=false)." });
+    }
     try {
       const [schema, mapping] = await Promise.all([getDataSourceSchema(), loadMapping()]);
       return {
@@ -320,12 +349,34 @@ export async function buildApp() {
     const job = getJob(id);
     if (!job) return reply.code(404).send({ error: "Job nicht gefunden." });
 
+    // Das Rezept steht schon, nur ein Ziel fehlt: Dann genuegt es, das fertige
+    // Rezept dorthin zu schreiben. Die ganze Strecke noch einmal zu laufen
+    // hiesse neue KI-Anfrage, womoeglich ein anderes Rezept - und das andere
+    // Ziel bekaeme Aenderungen, um die niemand gebeten hat.
+    const fehlend = Object.keys(job.targetErrors) as Target[];
+    if (job.status === "done" && job.recipe && fehlend.length) {
+      try {
+        const result = await republish(job, job.recipe, fehlend);
+        return {
+          id,
+          status: "done",
+          errors: result.errors,
+          mealieUrl: result.mealie?.url,
+          pageUrl: result.notion?.pageUrl,
+        };
+      } catch (err) {
+        return reply
+          .code(502)
+          .send({ error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
     if (job.kind === "foto" && job.photosDeleted) {
       return reply.code(409).send({
         error:
           "Die Fotos dieses Rezepts wurden nach dem erfolgreichen Durchlauf gelöscht. " +
           "Für einen neuen Anlauf lade sie bitte erneut hoch. Das Rezept selbst " +
-          "kannst du hier weiterhin bearbeiten und nach Notion schreiben.",
+          "kannst du hier weiterhin bearbeiten und erneut speichern.",
       });
     }
 
@@ -334,7 +385,7 @@ export async function buildApp() {
     return { id, status: "queued" };
   });
 
-  /** Korrigiertes Rezept aus der Web-App erneut nach Notion schreiben. */
+  /** Korrigiertes Rezept aus der Web-App erneut in alle Ziele schreiben. */
   app.put("/api/jobs/:id/recipe", async (request, reply) => {
     const { id } = request.params as { id: string };
     const job = getJob(id);
@@ -349,37 +400,14 @@ export async function buildApp() {
     }
 
     try {
-      const mapping = await loadMapping();
-      const result = await upsertRecipe({
-        recipe: parsed.data,
-        sourceUrl: job.url,
-        // Ohne Quell-URL faende der Duplikat-Check die Seite nicht wieder und
-        // eine Korrektur legte eine zweite an.
-        existingPageId: job.kind === "foto" ? (job.notionPageId ?? undefined) : undefined,
-        sourceLabel:
-          job.kind === "foto"
-            ? job.photos.length > 1
-              ? `Eigenes Foto (${job.photos.length} Bilder)`
-              : "Eigenes Foto"
-            : undefined,
-        sourceTitle: job.title ?? undefined,
-        transcript: job.transcript ?? undefined,
-        transcriptSource: job.textSource ?? undefined,
-        mapping,
-      });
-
-      updateJob(id, {
-        recipe: parsed.data,
-        status: "done",
-        step: result.updated ? "Aktualisiert" : "Angelegt",
-        error: null,
-        title: parsed.data.titel,
-        notionPageId: result.pageId ?? null,
-        notionPageUrl: result.pageUrl ?? null,
-        notionUpdated: result.updated,
-      });
-
-      return { ok: true, pageUrl: result.pageUrl, updated: result.updated };
+      const result = await republish(job, parsed.data);
+      return {
+        ok: true,
+        pageUrl: result.notion?.pageUrl,
+        mealieUrl: result.mealie?.url,
+        updated: result.updated,
+        errors: result.errors,
+      };
     } catch (err) {
       return reply
         .code(502)

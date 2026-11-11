@@ -35,8 +35,24 @@ const ConfigSchema = z.object({
   port: z.coerce.number().int().positive().default(3000),
   host: z.string().default("0.0.0.0"),
 
-  notionToken: z.string().min(1, "NOTION_TOKEN fehlt - siehe docs/notion.md"),
-  notionDatabaseId: z.string().min(1, "NOTION_DATABASE_ID fehlt - siehe docs/notion.md"),
+  /**
+   * Notion laesst sich abschalten, sobald Mealie die Rezepte uebernimmt. Dann
+   * sind Token und Datenbank-ID nicht mehr Pflicht - geprueft wird das unten.
+   */
+  notionEnabled: bool.default(true),
+  notionToken: z.string().default(""),
+  notionDatabaseId: z.string().default(""),
+
+  /**
+   * Mealie als zweites Ziel. Leer = aus. Die Adresse ist die, unter der der
+   * Container der App Mealie erreicht - nicht localhost, das waere der
+   * App-Container selbst.
+   */
+  mealieUrl: z
+    .string()
+    .default("")
+    .transform((v) => v.trim().replace(/\/+$/, "")),
+  mealieApiToken: z.string().default(""),
 
   geminiApiKey: z.string().default(""),
   // Feste Versionen statt "-latest": Letztere zeigen laut Google auf
@@ -111,6 +127,43 @@ const ConfigSchema = z.object({
   dataDir: z.string().default("data"),
   promptFile: z.string().default("prompts/recipe.de.md"),
   mappingFile: z.string().default("config/notion-mapping.json"),
+}).superRefine((cfg, ctx) => {
+  if (cfg.notionEnabled) {
+    if (!cfg.notionToken) {
+      ctx.addIssue({ code: "custom", path: ["notionToken"], message: "NOTION_TOKEN fehlt - siehe docs/notion.md" });
+    }
+    if (!cfg.notionDatabaseId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["notionDatabaseId"],
+        message: "NOTION_DATABASE_ID fehlt - siehe docs/notion.md",
+      });
+    }
+  }
+  // Nur eines von beiden gesetzt ist fast immer ein Tippfehler in der .env.
+  // Still zu ignorieren hiesse: Rezepte landen nicht in Mealie, und niemand
+  // merkt es.
+  if (Boolean(cfg.mealieUrl) !== Boolean(cfg.mealieApiToken)) {
+    ctx.addIssue({
+      code: "custom",
+      path: [cfg.mealieUrl ? "mealieApiToken" : "mealieUrl"],
+      message: "MEALIE_URL und MEALIE_API_TOKEN gehoeren zusammen - es ist nur eines gesetzt",
+    });
+  }
+  if (cfg.mealieUrl && !/^https?:\/\//i.test(cfg.mealieUrl)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["mealieUrl"],
+      message: "MEALIE_URL braucht http:// oder https:// vorn, z.B. http://192.168.2.227:9925",
+    });
+  }
+  if (!cfg.notionEnabled && !cfg.mealieUrl) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["notionEnabled"],
+      message: "Notion ist abgeschaltet und Mealie nicht eingerichtet - die Rezepte haetten kein Ziel",
+    });
+  }
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -143,8 +196,11 @@ export function getConfig(): Config {
     appToken: process.env.APP_TOKEN,
     port: process.env.PORT,
     host: process.env.HOST,
+    notionEnabled: process.env.NOTION_ENABLED,
     notionToken: process.env.NOTION_TOKEN,
     notionDatabaseId: process.env.NOTION_DATABASE_ID,
+    mealieUrl: process.env.MEALIE_URL,
+    mealieApiToken: process.env.MEALIE_API_TOKEN,
     geminiApiKey: process.env.GEMINI_API_KEY,
     geminiModel: process.env.GEMINI_MODEL,
     geminiFallbackModel: process.env.GEMINI_FALLBACK_MODEL,

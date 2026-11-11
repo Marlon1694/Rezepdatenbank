@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import { extract, detectPlatform, type ProgressFn } from "../extract/index.ts";
 import {
   readPhotos,
@@ -7,16 +8,16 @@ import {
   type RecipeMode,
 } from "../extract/photo.ts";
 import { extractRecipe } from "../llm/index.ts";
-import { getDataSourceSchema } from "../notion/client.ts";
-import { availableExtraFields, knownTags, knownOptions } from "../notion/mapper.ts";
-import { upsertRecipe, type UpsertResult } from "../notion/upsert.ts";
-import { loadMapping } from "./mapping.ts";
+import { publishRecipe, promptTargetContext, type PublishResult } from "../targets.ts";
 import { cleanUrl } from "../lib/url.ts";
 import { recipeShortcoming, type Recipe } from "../llm/recipeSchema.ts";
 
 export interface PipelineResult {
   recipe: Recipe;
-  upsert: UpsertResult;
+  /** Ergebnis je Ziel (Notion, Mealie) samt Fehlern der Ziele, die nicht geklappt haben. */
+  publish: PublishResult;
+  /** Siehe Job.coverRef. */
+  coverRef?: string;
   title?: string;
   platform: string;
   textSource: string;
@@ -33,6 +34,8 @@ export interface PhotoPipelineInput {
   reading?: PhotoReading;
   /** Bereits bestehende Notion-Seite dieses Jobs (zweiter Anlauf). */
   existingPageId?: string;
+  /** Bereits bestehendes Mealie-Rezept dieses Jobs. */
+  existingMealieSlug?: string;
   onProgress?: ProgressFn;
   dryRun?: boolean;
 }
@@ -111,7 +114,7 @@ export async function runPhotoPipeline(input: PhotoPipelineInput): Promise<Photo
   );
 
   onProgress("Rezept wird erstellt");
-  const [schema, mapping] = await Promise.all([getDataSourceSchema(), loadMapping()]);
+  const ziele = await promptTargetContext();
 
   const recipe = await extractRecipe({
     input: reading.abschrift || "(Die Bilder enthalten keinen lesbaren Text.)",
@@ -120,9 +123,9 @@ export async function runPhotoPipeline(input: PhotoPipelineInput): Promise<Photo
     platform: "Foto",
     mode,
     fehlt: reading.fehlt,
-    knownTags: knownTags(schema, mapping),
-    knownIngredients: knownOptions(schema, "zutatenliste", mapping),
-    extraFields: availableExtraFields(schema, mapping),
+    knownTags: ziele.knownTags,
+    knownIngredients: ziele.knownIngredients,
+    extraFields: ziele.extraFields,
   });
 
   // Im Erfindungsmodus ist das Rezept definitionsgemaess vollstaendig - die
@@ -138,25 +141,29 @@ export async function runPhotoPipeline(input: PhotoPipelineInput): Promise<Photo
   const label =
     input.paths.length > 1 ? `Eigenes Foto (${input.paths.length} Bilder)` : "Eigenes Foto";
 
-  onProgress(input.dryRun ? "Vorschau wird gebaut" : "Wird nach Notion geschrieben");
-  const upsert = await upsertRecipe({
+  onProgress(input.dryRun ? "Vorschau wird gebaut" : "Wird gespeichert");
+  const publish = await publishRecipe({
     recipe,
     sourceUrl: "",
     sourceLabel: label,
     sourceTitle: reading.titel,
     existingPageId: input.existingPageId,
+    existingMealieSlug: input.existingMealieSlug,
     coverFile:
       reading.gerichtBildIndex !== undefined ? input.paths[reading.gerichtBildIndex] : undefined,
     aiNotice: noticeFor(mode, reading.fehlt),
     transcript: reading.abschrift,
     transcriptSource: `Foto (${reading.art})`,
-    mapping,
     dryRun: input.dryRun,
   });
 
+  const coverPath =
+    reading.gerichtBildIndex !== undefined ? input.paths[reading.gerichtBildIndex] : undefined;
+
   return {
     recipe,
-    upsert,
+    publish,
+    coverRef: coverPath ? basename(coverPath) : undefined,
     title: reading.titel ?? recipe.titel,
     platform: "Foto",
     textSource: `Foto (${reading.art})`,
@@ -172,6 +179,7 @@ export async function runPipeline(
   url: string,
   onProgress: ProgressFn = () => {},
   dryRun = false,
+  opts: { existingMealieSlug?: string } = {},
 ): Promise<PipelineResult> {
   const platform = detectPlatform(url);
 
@@ -190,7 +198,7 @@ export async function runPipeline(
   onProgress("Rezept wird erstellt");
   // Schema vorher laden: es bestimmt, welche Zusatzfelder der Prompt anfordert und
   // welche Tags dem Modell als bereits vorhanden angeboten werden.
-  const [schema, mapping] = await Promise.all([getDataSourceSchema(), loadMapping()]);
+  const ziele = await promptTargetContext();
 
   const recipe = await extractRecipe({
     input: extracted.text,
@@ -198,9 +206,9 @@ export async function runPipeline(
     sourceTitle: extracted.title,
     uploader: extracted.uploader,
     platform,
-    knownTags: knownTags(schema, mapping),
-    knownIngredients: knownOptions(schema, "zutatenliste", mapping),
-    extraFields: availableExtraFields(schema, mapping),
+    knownTags: ziele.knownTags,
+    knownIngredients: ziele.knownIngredients,
+    extraFields: ziele.extraFields,
   });
 
   // Lieber nichts schreiben als eine Karte, die nach Rezept aussieht und keines ist.
@@ -218,21 +226,22 @@ export async function runPipeline(
     recipe.zeit_minuten = extracted.hintMinutes;
   }
 
-  onProgress(dryRun ? "Vorschau wird gebaut" : "Wird nach Notion geschrieben");
-  const upsert = await upsertRecipe({
+  onProgress(dryRun ? "Vorschau wird gebaut" : "Wird gespeichert");
+  const publish = await publishRecipe({
     recipe,
     sourceUrl: notionUrl,
     thumbnailUrl: extracted.thumbnailUrl,
     sourceTitle: extracted.title,
     transcript: extracted.text,
     transcriptSource: extracted.source,
-    mapping,
+    existingMealieSlug: opts.existingMealieSlug,
     dryRun,
   });
 
   return {
     recipe,
-    upsert,
+    publish,
+    coverRef: extracted.thumbnailUrl,
     title: extracted.title,
     platform,
     textSource: extracted.source,

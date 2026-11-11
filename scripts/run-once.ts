@@ -54,22 +54,32 @@ async function main(): Promise<void> {
 
   if (r.pro_tipp) console.log(`\n  💡 ${r.pro_tipp}`);
 
-  if (result.upsert.skippedFields.length) {
+  const { notion, mealie, errors } = result.publish;
+
+  if (notion?.skippedFields.length) {
     console.log(
       `\n  Hinweis: Fuer diese Felder gibt es keine passende Spalte in deiner ` +
-        `Datenbank: ${result.upsert.skippedFields.join(", ")}.` +
+        `Datenbank: ${notion.skippedFields.join(", ")}.` +
         `\n  'npm run inspect:notion' zeigt dein Schema.`,
     );
   }
 
   if (dryRun) {
     console.log(`\n  Trockenlauf - nichts geschrieben. (${seconds}s)\n`);
-  } else {
+    return;
+  }
+  if (notion) {
     console.log(
-      `\n  ${result.upsert.updated ? "Aktualisiert" : "Angelegt"}: ` +
-        `${result.upsert.pageUrl ?? result.upsert.pageId} (${seconds}s)\n`,
+      `\n  Notion ${notion.updated ? "aktualisiert" : "angelegt"}: ${notion.pageUrl ?? notion.pageId}`,
     );
   }
+  if (mealie) {
+    console.log(`  Mealie ${mealie.updated ? "aktualisiert" : "angelegt"}: ${mealie.url}`);
+  }
+  for (const [ziel, grund] of Object.entries(errors)) {
+    console.log(`  ${ziel} fehlgeschlagen: ${grund}`);
+  }
+  console.log(`  (${seconds}s)\n`);
 }
 
 main().catch((err: unknown) => {

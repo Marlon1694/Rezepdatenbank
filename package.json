@@ -13,6 +13,7 @@
     "start": "tsx src/server.ts",
     "inspect:notion": "tsx scripts/inspect-notion-db.ts",
     "recipe": "tsx scripts/run-once.ts",
+    "migrate:mealie": "tsx scripts/migrate-to-mealie.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",

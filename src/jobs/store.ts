@@ -51,6 +51,20 @@ export interface Job {
   notionPageId: string | null;
   notionPageUrl: string | null;
   notionUpdated: boolean;
+  mealieSlug: string | null;
+  mealieUrl: string | null;
+  /**
+   * Woher das Titelbild kam: die Adresse des Vorschaubilds oder - bei Fotos -
+   * der Dateiname des Bildes, das das Gericht zeigt. Damit bekommt ein Ziel,
+   * das erst im zweiten Anlauf erreicht wird, dasselbe Titelbild.
+   */
+  coverRef: string | null;
+  /**
+   * Ziele, in die das Rezept NICHT geschrieben werden konnte, mit Grund. Leer,
+   * wenn alles geklappt hat. Der Job gilt trotzdem als fertig, sobald es
+   * mindestens ein Ziel erreicht hat - der Rest laesst sich nachholen.
+   */
+  targetErrors: Partial<Record<"notion" | "mealie", string>>;
   createdAt: string;
   updatedAt: string;
   durationMs: number | null;
@@ -75,6 +89,10 @@ interface Row {
   notion_page_id: string | null;
   notion_page_url: string | null;
   notion_updated: number;
+  mealie_slug: string | null;
+  mealie_url: string | null;
+  cover_ref: string | null;
+  target_errors_json: string | null;
   created_at: string;
   updated_at: string;
   duration_ms: number | null;
@@ -109,6 +127,10 @@ function connect(): Database.Database {
       notion_page_id  TEXT,
       notion_page_url TEXT,
       notion_updated  INTEGER NOT NULL DEFAULT 0,
+      mealie_slug     TEXT,
+      mealie_url      TEXT,
+      cover_ref       TEXT,
+      target_errors_json TEXT,
       created_at      TEXT NOT NULL,
       updated_at      TEXT NOT NULL,
       duration_ms     INTEGER
@@ -139,6 +161,10 @@ function migrate(handle: Database.Database): void {
     ["parent_id", `ALTER TABLE jobs ADD COLUMN parent_id TEXT`],
     ["reading_json", `ALTER TABLE jobs ADD COLUMN reading_json TEXT`],
     ["photos_deleted", `ALTER TABLE jobs ADD COLUMN photos_deleted INTEGER NOT NULL DEFAULT 0`],
+    ["mealie_slug", `ALTER TABLE jobs ADD COLUMN mealie_slug TEXT`],
+    ["mealie_url", `ALTER TABLE jobs ADD COLUMN mealie_url TEXT`],
+    ["cover_ref", `ALTER TABLE jobs ADD COLUMN cover_ref TEXT`],
+    ["target_errors_json", `ALTER TABLE jobs ADD COLUMN target_errors_json TEXT`],
   ];
   for (const [spalte, sql] of nachtraeglich) {
     if (!vorhanden.has(spalte)) {
@@ -169,6 +195,10 @@ function toJob(row: Row): Job {
     notionPageId: row.notion_page_id,
     notionPageUrl: row.notion_page_url,
     notionUpdated: row.notion_updated === 1,
+    mealieSlug: row.mealie_slug ?? null,
+    mealieUrl: row.mealie_url ?? null,
+    coverRef: row.cover_ref ?? null,
+    targetErrors: row.target_errors_json ? JSON.parse(row.target_errors_json) : {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     durationMs: row.duration_ms,
@@ -304,6 +334,10 @@ type Patch = Partial<{
   notionPageId: string | null;
   notionPageUrl: string | null;
   notionUpdated: boolean;
+  mealieSlug: string | null;
+  mealieUrl: string | null;
+  coverRef: string | null;
+  targetErrors: Partial<Record<"notion" | "mealie", string>>;
   durationMs: number | null;
 }>;
 
@@ -322,6 +356,10 @@ const COLUMN: Record<keyof Patch, string> = {
   notionPageId: "notion_page_id",
   notionPageUrl: "notion_page_url",
   notionUpdated: "notion_updated",
+  mealieSlug: "mealie_slug",
+  mealieUrl: "mealie_url",
+  coverRef: "cover_ref",
+  targetErrors: "target_errors_json",
   durationMs: "duration_ms",
 };
 
@@ -333,6 +371,9 @@ export function updateJob(id: string, patch: Patch): void {
     sets.push(`${COLUMN[key]} = ?`);
     if (key === "recipe" || key === "reading" || key === "photos") {
       values.push(value ? JSON.stringify(value) : null);
+    } else if (key === "targetErrors") {
+      const leer = !value || Object.keys(value as object).length === 0;
+      values.push(leer ? null : JSON.stringify(value));
     } else if (key === "notionUpdated" || key === "photosDeleted") {
       values.push(value ? 1 : 0);
     } else values.push(value ?? null);

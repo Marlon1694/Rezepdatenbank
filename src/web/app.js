@@ -312,6 +312,7 @@ $("refreshBtn").addEventListener("click", refresh);
 /* ── Verlauf ──────────────────────────────────────────────────────────────── */
 
 const STATUS_LABEL = { queued: "Wartet", running: "Läuft", done: "Fertig", failed: "Fehler" };
+const ZIEL = { notion: "Notion", mealie: "Mealie" };
 
 function relativeTime(iso) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -355,6 +356,8 @@ function renderJobs(jobs) {
       if (job.textSource) meta.push(job.textSource);
       if (job.durationMs) meta.push(`${(job.durationMs / 1000).toFixed(0)} s`);
       if (job.notionUpdated) meta.push("aktualisiert");
+      const fehlt = Object.keys(job.targetErrors || {}).map((z) => ZIEL[z] || z);
+      if (fehlt.length) meta.push(`⚠️ fehlt in ${fehlt.join(", ")}`);
     }
     meta.push(relativeTime(job.createdAt));
 
@@ -473,6 +476,9 @@ async function openDetail(id) {
   const link = $("notionLink");
   link.hidden = !job.notionPageUrl;
   if (job.notionPageUrl) link.href = job.notionPageUrl;
+  const mLink = $("mealieLink");
+  mLink.hidden = !job.mealieUrl;
+  if (job.mealieUrl) mLink.href = job.mealieUrl;
 
   const head = document.createElement("div");
   // Ein Foto hat keine Adresse - dort wäre der Link nur ein toter Platzhalter.
@@ -558,6 +564,30 @@ async function openDetail(id) {
   // Ohne Bilder gibt es nichts zu wiederholen - der Server wiese den Versuch
   // ohnehin ab, und ein Knopf, der nur eine Fehlermeldung produziert, hilft
   // niemandem.
+  // Steht das Rezept nur in einem der Ziele, gezielt nachtragen - ohne neue
+  // KI-Anfrage und ohne das andere Ziel anzufassen.
+  const fehlend = Object.entries(job.targetErrors || {});
+  if (job.status === "done" && fehlend.length) {
+    const hinweis = document.createElement("p");
+    hinweis.className = "error";
+    hinweis.textContent = fehlend
+      .map(([z, g]) => `Nicht in ${ZIEL[z] || z} gespeichert: ${g}`)
+      .join("\n");
+    // Direkt unter den Titel, nicht unter den Editor - dort sähe ihn niemand.
+    head.after(hinweis);
+
+    const nach = document.createElement("button");
+    nach.textContent = `In ${fehlend.map(([z]) => ZIEL[z] || z).join(" und ")} nachtragen`;
+    nach.className = "primary";
+    nach.style.marginTop = "0";
+    wire(nach, async () => {
+      await api(`/api/jobs/${id}/retry`, { method: "POST" });
+      await openDetail(id);
+      refresh();
+    });
+    actions.appendChild(nach);
+  }
+
   if (job.status === "failed" && !(job.kind === "foto" && job.photosDeleted)) {
     const retry = document.createElement("button");
     retry.textContent = "Erneut versuchen";
@@ -643,7 +673,10 @@ function buildEditor(job) {
       const zutat = input(e.zutat, "Zutat");
       row.append(menge, zutat);
       g.appendChild(row);
-      rows.push({ menge, zutat });
+      // Das Original merken: Bleibt die Zeile unverändert, geht ihre Zerlegung
+      // (Zahl, Einheit, Lebensmittel) unverändert mit. Wird sie geändert, passt
+      // die alte Zerlegung nicht mehr - dann lieber ohne als falsch.
+      rows.push({ menge, zutat, original: e });
     }
     ingBox.appendChild(g);
     groupEls.push({ name, rows });
@@ -681,6 +714,9 @@ function buildEditor(job) {
     msg.textContent = "Wird gespeichert …";
 
     const payload = {
+      // Alles, was der Editor nicht anzeigt (Schwierigkeit, Grundzutaten …),
+      // unverändert mitschicken. Vorher fiel es bei jeder Korrektur still weg.
+      ...r,
       emoji: emojiEl.value.trim() || "🍽️",
       titel: titelEl.value.trim(),
       tags: tagsEl.value.split(",").map((t) => t.trim()).filter(Boolean),
@@ -691,10 +727,15 @@ function buildEditor(job) {
           gruppe: g.name.value.trim() || "Zutaten",
           eintraege: g.rows
             .filter((row) => row.zutat.value.trim())
-            .map((row) => ({
-              menge: row.menge.value.trim() || undefined,
-              zutat: row.zutat.value.trim(),
-            })),
+            .map((row) => {
+              const menge = row.menge.value.trim();
+              const zutat = row.zutat.value.trim();
+              const o = row.original || {};
+              const unverändert = menge === (o.menge || "") && zutat === o.zutat;
+              return unverändert
+                ? { ...o, menge: menge || undefined, zutat }
+                : { menge: menge || undefined, zutat };
+            }),
         }))
         .filter((g) => g.eintraege.length),
       schritte: stepEls.map((t) => t.value.trim()).filter(Boolean),
@@ -708,11 +749,20 @@ function buildEditor(job) {
         method: "PUT",
         body: JSON.stringify(payload),
       });
-      msg.className = "msg ok";
-      msg.textContent = res.updated ? "Notion-Seite aktualisiert." : "Nach Notion geschrieben.";
+      const fehler = Object.entries(res.errors || {});
+      msg.className = fehler.length ? "msg err" : "msg ok";
+      msg.textContent = fehler.length
+        ? `Gespeichert, aber nicht überall: ${fehler.map(([z, g]) => `${ZIEL[z] || z}: ${g}`).join(" · ")}`
+        : res.updated
+          ? "Gespeichert und aktualisiert."
+          : "Gespeichert.";
       if (res.pageUrl) {
         $("notionLink").href = res.pageUrl;
         $("notionLink").hidden = false;
+      }
+      if (res.mealieUrl) {
+        $("mealieLink").href = res.mealieUrl;
+        $("mealieLink").hidden = false;
       }
       refresh();
     } catch (err) {

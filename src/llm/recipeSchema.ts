@@ -22,6 +22,19 @@ export const ZutatSchema = z.object({
   /** "200 g", "1 EL", "1 cup (ca. 120 g)" - null, wenn im Video keine Menge genannt wird. */
   menge: optionalText,
   zutat: z.string().min(1),
+  /**
+   * Dieselbe Zutat zerlegt - fuer Mealie. Nur so fasst dessen Einkaufsliste
+   * "200 g Mehl" und "100 g Mehl" zu einer Zeile zusammen, und nur so
+   * funktioniert die Portionsumrechnung. Notion nutzt weiter menge/zutat.
+   *
+   * Alles optional: Bei "eine Prise Salz" oder "nach Geschmack" gibt es keine
+   * Zahl. Und Rezepte, die vor dieser Erweiterung in der Datenbank gelandet
+   * sind, haben die Felder gar nicht - deshalb ist auch `undefined` erlaubt
+   * und nicht nur null. Der Typ soll das zeigen, statt es zu verschweigen.
+   */
+  anzahl: z.number().positive().nullish(),
+  einheit: z.string().nullish(),
+  lebensmittel: z.string().nullish(),
 });
 
 export const ZutatenGruppeSchema = z.object({
@@ -96,6 +109,26 @@ export const GEMINI_RESPONSE_SCHEMA = {
                   description: "Weglassen, wenn im Material keine Menge genannt wird",
                 },
                 zutat: { type: "string" },
+                anzahl: {
+                  type: "number",
+                  description:
+                    "Die Menge als Zahl: 200 bei '200 g', 0.5 bei '1/2 TL', 2 bei '2 Eier'. " +
+                    "Bei nicht-metrischen Angaben die metrische Umrechnung. Weglassen, " +
+                    "wenn keine Zahl genannt ist ('eine Prise', 'nach Geschmack').",
+                },
+                einheit: {
+                  type: "string",
+                  description:
+                    "Die Einheit in deutscher Kurzform: g, kg, ml, l, EL, TL, Prise, " +
+                    "Stück, Dose, Bund, Zehe, Packung. Weglassen bei bloßen Stückzahlen " +
+                    "wie '2 Eier'.",
+                },
+                lebensmittel: {
+                  type: "string",
+                  description:
+                    "Nur das Lebensmittel, im Singular, ohne Menge und ohne " +
+                    "Zubereitungshinweis: 'Zwiebel' bei '2 Zwiebeln, fein gewürfelt'.",
+                },
               },
               required: ["zutat"],
             },
