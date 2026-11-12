@@ -43,6 +43,7 @@ function showSetup(message) {
   $("submit").hidden = true;
   $("photoCard").hidden = true;
   $("kitchenCard").hidden = true;
+  $("diktatCard").hidden = true;
   $("listSection").hidden = true;
   const err = $("setupError");
   err.hidden = !message;
@@ -68,6 +69,8 @@ async function checkPhotoSupport() {
     if (health.maxPhotos) maxPhotos = health.maxPhotos;
     // Wochenplan, Einkauf und "Was kochen?" laufen über Mealie.
     if (typeof kitchenInit === "function") kitchenInit(health);
+    // Diktate brauchen Gemini - wie die Fotos.
+    $("diktatCard").hidden = !health.fotos;
   } catch {
     $("photoCard").hidden = true;
   }
@@ -348,12 +351,15 @@ function renderJobs(jobs) {
     // entstanden sind - er hat selbst kein Rezept.
     const istStapel = job.textSource === "Stapel";
     const title =
-      job.recipeTitle || job.title || (istFoto ? `📷 ${job.photos.length} Foto(s)` : job.url);
+      job.recipeTitle ||
+      job.title ||
+      (istFoto ? `📷 ${job.photos.length} Foto(s)` : job.kind === "diktat" ? "🎙️ Diktat" : job.url);
     const meta = [];
     if (istStapel) meta.push("📚 Stapel");
     else if (job.parentId) meta.push("aus Stapel");
     else if (job.platform) meta.push(job.platform);
     else if (istFoto) meta.push("Foto");
+    else if (job.kind === "diktat") meta.push("Diktat");
     if (job.status === "running" && job.step) meta.push(job.step);
     if (job.status === "done") {
       if (job.textSource) meta.push(job.textSource);
@@ -486,7 +492,9 @@ async function openDetail(id) {
   const head = document.createElement("div");
   // Ein Foto hat keine Adresse - dort wäre der Link nur ein toter Platzhalter.
   const herkunft =
-    job.kind === "foto"
+    job.kind === "diktat"
+      ? `<p class="muted small">🎙️ Eigenes Diktat</p>`
+      : job.kind === "foto"
       ? `<p class="muted small">📷 Eigenes Foto${
           job.photos.length > 1 ? ` · ${job.photos.length} Bilder` : ""
         }${job.parentId ? " · aus einem Stapel" : ""}</p>`

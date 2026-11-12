@@ -113,6 +113,31 @@ export async function buildPrompt(ctx: PromptContext): Promise<string> {
 export function buildModeSection(mode: RecipeMode | undefined, fehlt: string[] = []): string {
   if (!mode || mode === "abtippen") return "";
 
+  if (mode === "diktat") {
+    return [
+      "## Sonderfall: Gesprochenes Diktat",
+      "",
+      "Das Material habe ich frei gesprochen. Es kann ein ausführliches Rezept sein —",
+      "oder nur ein Wunsch wie „mach mir was aus Kartoffeln und Schnitzel“.",
+      "Die Regel „Nichts erfinden“ gilt hier **nicht in voller Strenge**:",
+      "",
+      "- **Was ich gesagt habe, hat Vorrang.** Genannte Zutaten, Mengen, Schritte, Zeiten",
+      "  und Vorgaben (vegetarisch, schnell, für 4 Personen …) übernimmst du sinngemäß.",
+      "  Gesprochene Zahlen schreibst du als Ziffern („zweihundert Gramm“ → 200 g).",
+      "- **Was fehlt, ergänzt du** so, dass ein vollständiges, kochbares Rezept entsteht —",
+      "  naheliegend und klassisch, keine ausgefallenen Zutaten.",
+      "- **Kennzeichnung:** Habe ich ein Rezept mit eigenen Mengen oder Schritten diktiert,",
+      "  markierst du jede Ergänzung — Mengen bekommen `(ergänzt)` angehängt, ergänzte",
+      "  Schritte beginnen mit `(ergänzt)`. Bei einem bloßen Wunsch ohne eigene Mengen und",
+      "  Schritte entfällt die Kennzeichnung, dann ist ohnehin alles von dir.",
+      "- Füllwörter und Versprecher lässt du weg. Korrigiere ich mich („nee, doch lieber",
+      "  300 Gramm“), gilt die Korrektur.",
+      "- Habe ich keinen Namen für das Gericht genannt, wähle einen passenden.",
+      "- `pro_tipp`: Habe ich einen Tipp genannt, den; sonst ein echter, konkreter Tipp",
+      "  zur Zubereitung dieses Gerichts.",
+    ].join("\n");
+  }
+
   const luecken = fehlt.length ? fehlt.join(", ") : "Teile des Rezepts";
 
   if (mode === "erfinden") {

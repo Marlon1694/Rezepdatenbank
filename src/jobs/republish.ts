@@ -52,7 +52,12 @@ export async function republish(
         ? job.photos.length > 1
           ? `Eigenes Foto (${job.photos.length} Bilder)`
           : "Eigenes Foto"
-        : undefined,
+        : job.kind === "diktat"
+          ? "Eigenes Diktat"
+          : undefined,
+    sourceIcon: job.kind === "diktat" ? "🎙️" : undefined,
+    // Sonst verschwaende der Hinweis "von der KI ergaenzt" bei jeder Korrektur.
+    aiNotice: job.aiNotice ?? undefined,
     sourceTitle: job.title ?? undefined,
     transcript: job.transcript ?? undefined,
     transcriptSource: job.textSource ?? undefined,

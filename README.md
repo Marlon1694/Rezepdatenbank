@@ -192,6 +192,28 @@ Tracking gilt — dort kann ein Parameter wie `?seite=2` inhaltlich wichtig sein
 > Voraussetzung ist eine Spalte für die Quelle (bei dir `URL`). Ohne sie kann derselbe
 > Link nicht wiedererkannt werden und jeder Lauf legt eine neue Seite an.
 
+## Rezept diktieren
+
+Sprechen statt tippen — in der Web-App unter **🎙️ Rezept diktieren** oder per Siri
+(**„Hey Siri, Rezept diktieren"**, Einrichtung in [`docs/ios-shortcut.md`](docs/ios-shortcut.md)).
+
+- Ein **kurzer Wunsch** („mach mir was aus Kartoffeln und Schnitzel für vier") wird
+  zu einem ganzen Rezept. Oben auf der Seite steht dann, dass es frei entwickelt ist.
+- Ein **ausführliches Diktat** mit Mengen und Schritten wird übernommen und nur in
+  den Lücken ergänzt — jede Ergänzung ist mit „(ergänzt)" markiert.
+- Füllwörter, Versprecher und Selbstkorrekturen („nee, doch lieber 300 Gramm")
+  bereinigt die KI.
+
+| Weg | Braucht HTTPS? |
+|---|---|
+| Textfeld + **Mikrofon auf der iPhone-Tastatur** | nein |
+| Siri-Kurzbefehl „Text diktieren" | nein |
+| **Sprachmemo hochladen** — schreibt der Server mit Whisper ab | nein |
+| **Aufnehmen** direkt in der Web-App | ja — Browser geben das Mikrofon nur über HTTPS frei (Tailscale). Über `http://` blendet die App den Knopf aus. |
+
+Die Audiodatei wird nach dem Abschreiben gelöscht; der Text bleibt im Verlauf, und
+„Erneut versuchen" braucht nur ihn.
+
 ## Mealie
 
 Zusätzlich oder statt Notion schreibt die App jedes Rezept nach

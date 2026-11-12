@@ -8,7 +8,7 @@ import {
   childrenOf,
   type Job,
 } from "./store.ts";
-import { runPipeline, runPhotoPipeline } from "./pipeline.ts";
+import { runPipeline, runPhotoPipeline, runDictationPipeline } from "./pipeline.ts";
 import {
   photoPaths,
   photoOwner,
@@ -79,6 +79,15 @@ export function photosStillNeeded(fertigerJobId: string, beteiligte: Job[]): boo
 }
 
 async function cleanupAfterSuccess(job: Job): Promise<void> {
+  // Die Audiodatei eines Diktats ist nach dem Abschreiben ueberfluessig: Der
+  // Text steht im Transkript, ein zweiter Anlauf braucht nur den.
+  if (job.kind === "diktat") {
+    if (job.photos.length) {
+      await removePhotos(job.id).catch(() => {});
+      updateJob(job.id, { photosDeleted: true });
+    }
+    return;
+  }
   if (job.kind !== "foto" || !getConfig().deletePhotosAfterSuccess) return;
 
   const besitzer = photoOwner(job);
@@ -130,9 +139,20 @@ async function processOne(): Promise<boolean> {
             existingMealieSlug: job.mealieSlug ?? undefined,
             onProgress,
           })
-        : await runPipeline(job.url, onProgress, false, {
-            existingMealieSlug: job.mealieSlug ?? undefined,
-          });
+        : job.kind === "diktat"
+          ? await runDictationPipeline({
+              // Einmal abgeschrieben, wird fuer einen zweiten Anlauf der Text
+              // genommen - die Audiodatei ist dann womoeglich schon geloescht.
+              text: job.transcript ?? undefined,
+              audioPath: job.photos[0] ? photoPaths(job.id, job.photos)[0] : undefined,
+              existingPageId: job.notionPageId ?? undefined,
+              existingMealieSlug: job.mealieSlug ?? undefined,
+              onProgress,
+              onTranscribed: (text) => updateJob(job.id, { transcript: text, textSource: "Diktat" }),
+            })
+          : await runPipeline(job.url, onProgress, false, {
+              existingMealieSlug: job.mealieSlug ?? undefined,
+            });
 
     if ("split" in result) {
       await splitIntoChildren(job, result.readings, startedAt);
@@ -167,6 +187,7 @@ async function processOne(): Promise<boolean> {
         : {}),
       targetErrors: publish.errors,
       coverRef: result.coverRef ?? null,
+      aiNotice: result.aiNotice ?? null,
       durationMs: Date.now() - startedAt,
     });
 

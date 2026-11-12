@@ -45,6 +45,25 @@ export function photoOwner(job: { id: string; parentId: string | null }): string
   return job.parentId ?? job.id;
 }
 
+/** Was als Diktat hochgeladen werden darf - Sprachmemos, Aufnahmen aus dem Browser. */
+export const AUDIO_EXTENSIONS = [".m4a", ".mp3", ".mp4", ".aac", ".wav", ".webm", ".ogg", ".opus", ".caf"];
+
+export function checkAudio(
+  filename: string,
+  size: number,
+): { ok: true; extension: string } | { ok: false; error: string } {
+  const dot = filename.lastIndexOf(".");
+  const extension = dot === -1 ? "" : filename.slice(dot).toLowerCase();
+  if (!AUDIO_EXTENSIONS.includes(extension)) {
+    return {
+      ok: false,
+      error: `„${filename}“ ist keine Audiodatei. Möglich sind: ${AUDIO_EXTENSIONS.join(", ")}.`,
+    };
+  }
+  if (size <= 0) return { ok: false, error: `„${filename}“ ist leer.` };
+  return { ok: true, extension };
+}
+
 /** Prueft eine hochgeladene Datei, bevor sie auf der Platte landet. */
 export function checkPhoto(
   filename: string,

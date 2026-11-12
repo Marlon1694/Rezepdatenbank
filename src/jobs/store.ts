@@ -14,8 +14,15 @@ import type { PhotoReading } from "../extract/photo.ts";
  */
 export type JobStatus = "draft" | "queued" | "running" | "done" | "failed";
 
-/** Woher das Rezept kommt: ein Link oder hochgeladene Fotos. */
-export type JobKind = "link" | "foto";
+/**
+ * Woher das Rezept kommt: ein Link, hochgeladene Fotos oder ein Diktat.
+ *
+ * Ein Diktat kommt als Text (Tastatur-Diktat, Siri-Kurzbefehl) oder als
+ * Audiodatei (Sprachmemo, Aufnahme in der App). Die Audiodatei liegt dann wie
+ * Fotos unter data/uploads/<id>/ und steht in `photos` - das Feld heisst aus
+ * historischen Gruenden so, gemeint ist "hochgeladene Dateien".
+ */
+export type JobKind = "link" | "foto" | "diktat";
 
 export interface Job {
   id: string;
@@ -60,6 +67,12 @@ export interface Job {
    */
   coverRef: string | null;
   /**
+   * Der Hinweis oben auf der Seite, wenn die KI ergaenzt oder frei entwickelt
+   * hat. Gespeichert, damit er eine Korrektur in der Web-App uebersteht - die
+   * schreibt die Seite neu.
+   */
+  aiNotice: string | null;
+  /**
    * Ziele, in die das Rezept NICHT geschrieben werden konnte, mit Grund. Leer,
    * wenn alles geklappt hat. Der Job gilt trotzdem als fertig, sobald es
    * mindestens ein Ziel erreicht hat - der Rest laesst sich nachholen.
@@ -92,6 +105,7 @@ interface Row {
   mealie_slug: string | null;
   mealie_url: string | null;
   cover_ref: string | null;
+  ai_notice: string | null;
   target_errors_json: string | null;
   created_at: string;
   updated_at: string;
@@ -130,6 +144,7 @@ function connect(): Database.Database {
       mealie_slug     TEXT,
       mealie_url      TEXT,
       cover_ref       TEXT,
+      ai_notice       TEXT,
       target_errors_json TEXT,
       created_at      TEXT NOT NULL,
       updated_at      TEXT NOT NULL,
@@ -196,6 +211,7 @@ function migrate(handle: Database.Database): void {
     ["mealie_slug", `ALTER TABLE jobs ADD COLUMN mealie_slug TEXT`],
     ["mealie_url", `ALTER TABLE jobs ADD COLUMN mealie_url TEXT`],
     ["cover_ref", `ALTER TABLE jobs ADD COLUMN cover_ref TEXT`],
+    ["ai_notice", `ALTER TABLE jobs ADD COLUMN ai_notice TEXT`],
     ["target_errors_json", `ALTER TABLE jobs ADD COLUMN target_errors_json TEXT`],
   ];
   for (const [spalte, sql] of nachtraeglich) {
@@ -230,6 +246,7 @@ function toJob(row: Row): Job {
     mealieSlug: row.mealie_slug ?? null,
     mealieUrl: row.mealie_url ?? null,
     coverRef: row.cover_ref ?? null,
+    aiNotice: row.ai_notice ?? null,
     targetErrors: row.target_errors_json ? JSON.parse(row.target_errors_json) : {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -248,6 +265,18 @@ export function createJob(url: string): Job {
  */
 export function createPhotoJob(): Job {
   return insert({ kind: "foto", url: "", photos: [], status: "draft" });
+}
+
+/** Ein Diktat als Text - sofort eingereiht. Der Text liegt im Transkript. */
+export function createDictationJob(text: string): Job {
+  const job = insert({ kind: "diktat", url: "", photos: [] });
+  updateJob(job.id, { transcript: text, textSource: "Diktat" });
+  return getJob(job.id)!;
+}
+
+/** Ein Diktat als Audiodatei - erst Entwurf, eingereiht wird mit queuePhotoJob(). */
+export function createAudioDraft(): Job {
+  return insert({ kind: "diktat", url: "", photos: [], status: "draft" });
 }
 
 function insert(opts: {
@@ -369,6 +398,7 @@ type Patch = Partial<{
   mealieSlug: string | null;
   mealieUrl: string | null;
   coverRef: string | null;
+  aiNotice: string | null;
   targetErrors: Partial<Record<"notion" | "mealie", string>>;
   durationMs: number | null;
 }>;
@@ -391,6 +421,7 @@ const COLUMN: Record<keyof Patch, string> = {
   mealieSlug: "mealie_slug",
   mealieUrl: "mealie_url",
   coverRef: "cover_ref",
+  aiNotice: "ai_notice",
   targetErrors: "target_errors_json",
   durationMs: "duration_ms",
 };

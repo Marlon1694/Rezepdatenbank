@@ -60,6 +60,7 @@ export interface UpsertInput {
   existingPageId?: string;
   /** Klartext-Herkunft fuer Fotos, z.B. "Eigenes Foto (2 Bilder)". */
   sourceLabel?: string;
+  sourceIcon?: string;
   /** Hinweis, wenn die KI ergaenzt hat. */
   aiNotice?: string;
   sourceTitle?: string;
@@ -154,6 +155,7 @@ export async function upsertRecipe(input: UpsertInput): Promise<UpsertResult> {
     sourceUrl: input.sourceUrl,
     sourceTitle: input.sourceTitle,
     sourceLabel: input.sourceLabel,
+    sourceIcon: input.sourceIcon,
     aiNotice: input.aiNotice,
     transcript: input.transcript,
     transcriptSource: input.transcriptSource,

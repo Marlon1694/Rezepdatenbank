@@ -338,3 +338,8 @@ details.transcript pre {
   border-bottom: 1px solid var(--line);
 }
 .k-item input { width: 20px; height: 20px; margin: 1px 0 0; flex: none; }
+
+/* ── Diktat ────────────────────────────────────────────────────────────────── */
+#diktatText { margin-bottom: 4px; }
+.diktat-row { margin-top: 8px; }
+#diktatRecord.recording { border-color: #c0392b; color: #c0392b; }

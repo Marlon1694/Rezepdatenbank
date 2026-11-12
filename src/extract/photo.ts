@@ -323,7 +323,7 @@ export function usableReadings(readings: PhotoReading[]): PhotoReading[] {
  *   ergaenzen = Grundgeruest da, Luecken werden gefuellt und gekennzeichnet
  *   erfinden  = nur ein Bild vom Gericht, das Rezept entsteht komplett neu
  */
-export type RecipeMode = "abtippen" | "ergaenzen" | "erfinden";
+export type RecipeMode = "abtippen" | "ergaenzen" | "erfinden" | "diktat";
 
 export function modeFor(reading: PhotoReading): RecipeMode {
   if (reading.art === "rezept" && reading.fehlt.length === 0) return "abtippen";

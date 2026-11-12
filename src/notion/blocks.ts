@@ -60,6 +60,8 @@ export interface BlockOptions {
    * auf die man klicken koennte.
    */
   sourceLabel?: string;
+  /** Symbol vor der Herkunft ohne Link - 📷 fuer Fotos, 🎙️ fuer Diktate. */
+  sourceIcon?: string;
   /**
    * Gesetzt, wenn die KI Luecken gefuellt oder das Rezept anhand eines Bildes
    * entwickelt hat. Steht als Warnung ganz oben - wer das Rezept spaeter
@@ -89,7 +91,7 @@ export function buildRecipeBlocks(recipe: Recipe, opts: BlockOptions): Block[] {
     object: "block",
     type: "callout",
     callout: {
-      icon: { type: "emoji", emoji: klickbar ? "🔗" : "📷" },
+      icon: { type: "emoji", emoji: klickbar ? "🔗" : (opts.sourceIcon ?? "📷") },
       color: "gray_background",
       rich_text: klickbar
         ? link(opts.sourceTitle?.trim() || opts.sourceUrl, opts.sourceUrl)

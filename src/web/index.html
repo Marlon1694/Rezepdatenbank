@@ -43,6 +43,27 @@
     <p class="muted small">YouTube, Instagram, TikTok, Food-Blogs — alles was einen Link hat.</p>
   </section>
 
+  <!-- Diktat -->
+  <section id="diktatCard" class="card" hidden>
+    <h2 class="card-title">🎙️ Rezept diktieren</h2>
+    <textarea id="diktatText" rows="4"
+      placeholder="Sprich oder tippe – z.B. „Mach mir was aus Kartoffeln und Schnitzel für vier Personen“ oder ein ganzes Rezept mit Mengen und Schritten."></textarea>
+    <p class="muted small" id="diktatTipp">
+      Tipp: Auf der iPhone-Tastatur das <strong>Mikrofon</strong> antippen und lossprechen.
+    </p>
+    <button id="diktatSubmit" class="primary">Rezept erstellen</button>
+    <div class="row diktat-row">
+      <button id="diktatRecord" class="ghost wide" hidden>🎙️ Aufnehmen</button>
+      <button id="diktatUploadBtn" class="ghost wide">Sprachmemo hochladen</button>
+    </div>
+    <input id="diktatFile" type="file" accept="audio/*,.m4a,.mp3,.wav,.webm,.ogg,.caf" hidden>
+    <p id="diktatMsg" class="msg" hidden></p>
+    <p class="muted small">
+      Ein kurzer Wunsch wird zu einem ganzen Rezept, ein ausführliches Diktat wird
+      übernommen und nur ergänzt. Was die KI hinzufügt, ist im Rezept markiert.
+    </p>
+  </section>
+
   <!-- Abfotografiertes Rezept -->
   <section id="photoCard" class="card" hidden>
     <h2 class="card-title">📷 Rezept abfotografieren</h2>
@@ -108,5 +129,6 @@
 
 <script src="app.js"></script>
 <script src="kitchen.js"></script>
+<script src="diktat.js"></script>
 </body>
 </html>

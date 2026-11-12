@@ -9,6 +9,8 @@ import { getConfig } from "./config.ts";
 import {
   createJob,
   createPhotoJob,
+  createDictationJob,
+  createAudioDraft,
   queuePhotoJob,
   getJob,
   listJobs,
@@ -19,6 +21,7 @@ import {
   approvalsOverlapping,
 } from "./jobs/store.ts";
 import {
+  checkAudio,
   checkPhoto,
   savePhoto,
   removePhotos,
@@ -312,6 +315,73 @@ export async function buildApp() {
       platform: detectPlatform(url),
       message: "Eingereiht. Status unter /api/jobs/" + job.id,
     });
+  });
+
+  /**
+   * Diktat als Text: vom Tastatur-Mikrofon in der Web-App oder aus einem
+   * Siri-Kurzbefehl ("Text diktieren"). Beides braucht kein HTTPS - anders als
+   * eine Aufnahme im Browser.
+   */
+  app.post("/api/jobs/diktat", async (request, reply) => {
+    if (!cfg.geminiApiKey) {
+      return reply.code(503).send({ error: "Für Diktate braucht es GEMINI_API_KEY." });
+    }
+    const text = (request.body as { text?: unknown } | undefined)?.text;
+    if (typeof text !== "string" || text.trim().length < 3) {
+      return reply.code(400).send({ error: "Das Diktat ist leer." });
+    }
+    // Grosszuegig, aber nicht grenzenlos: Ein ausfuehrliches Rezept hat ein
+    // paar tausend Zeichen, das Zehnfache ist kein Diktat mehr.
+    if (text.length > 30_000) {
+      return reply.code(413).send({ error: "Das Diktat ist zu lang (höchstens 30.000 Zeichen)." });
+    }
+    const job = createDictationJob(text.trim());
+    nudgeWorker();
+    return reply.code(202).send({ id: job.id, status: job.status, kind: "diktat" });
+  });
+
+  /** Diktat als Audiodatei: Sprachmemo, Kurzbefehl "Audio aufnehmen" oder Aufnahme in der App. */
+  app.post("/api/jobs/diktat/audio", async (request, reply) => {
+    if (!cfg.geminiApiKey) {
+      return reply.code(503).send({ error: "Für Diktate braucht es GEMINI_API_KEY." });
+    }
+    if (!request.isMultipart()) {
+      return reply.code(400).send({ error: "Die Aufnahme muss als multipart/form-data kommen." });
+    }
+
+    const job = createAudioDraft();
+    try {
+      let name: string | undefined;
+      for await (const part of request.parts()) {
+        if (part.type !== "file") continue;
+        if (name) throw new HttpError(400, "Bitte nur eine Aufnahme pro Diktat.");
+        let data: Buffer;
+        try {
+          data = await part.toBuffer();
+        } catch (err) {
+          if ((err as { code?: string }).code === "FST_REQ_FILE_TOO_LARGE") {
+            throw new HttpError(
+              413,
+              `Die Aufnahme überschreitet ${Math.round(cfg.maxPhotoBytes / 1024 / 1024)} MB.`,
+            );
+          }
+          throw err;
+        }
+        const check = checkAudio(part.filename ?? "diktat.m4a", data.length);
+        if (!check.ok) throw new HttpError(400, check.error);
+        name = await savePhoto(job.id, 1, check.extension, data);
+      }
+      if (!name) throw new HttpError(400, "Es war keine Aufnahme dabei.");
+
+      queuePhotoJob(job.id, [name]);
+      nudgeWorker();
+      return reply.code(202).send({ id: job.id, status: "queued", kind: "diktat" });
+    } catch (err) {
+      await removePhotos(job.id).catch(() => {});
+      deleteJob(job.id);
+      const status = err instanceof HttpError ? err.status : 400;
+      return reply.code(status).send({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   /**
