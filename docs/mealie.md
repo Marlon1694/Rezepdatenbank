@@ -137,9 +137,67 @@ Findet die Suche Bridge oder Karten nicht: *Über Link hinzufügen* mit
 `https://github.com/mealie-atelier/mealie-atelier-bridge` bzw.
 `https://github.com/mealie-atelier/mealie-atelier-cards`.
 
-Optional in den Optionen der Bridge (Zahnrad): **Benachrichtigungsdienst für Timer**
-= `notify.mobile_app_<dein_iphone>`. Denselben Dienst brauchen wir später für die
-Sonntags-Nachricht.
+Die Küchentimer richtest du im nächsten Abschnitt ein.
+
+## Küchentimer auf allen Geräten
+
+Die Timer laufen **in Home Assistant**, nicht auf dem Gerät: Am iPad stellen, iPad
+weglegen — der Timer läuft weiter. Läuft er ab, meldet Atelier das zweifach:
+
+1. als Benachrichtigung in Home Assistant (Glocke in der Seitenleiste) — auf jedem
+   Gerät zu sehen, auf dem Home Assistant offen ist
+2. als Push an **einen** Benachrichtigungsdienst aus den Bridge-Optionen
+
+**Timer gehören einem Home-Assistant-Benutzer.** Andere Benutzer sehen ihn in der
+Karte nicht, Administratoren sehen alle. Am einfachsten: auf iPhone, iPad und
+Küchentablet mit demselben Benutzer anmelden.
+
+**Push auf mehrere Geräte:** Weil Atelier nur einen Dienst kennt, fasst eine
+Benachrichtigungsgruppe die Geräte zusammen. In der `configuration.yaml`:
+
+```yaml
+notify:
+  - platform: group
+    name: kueche
+    services:
+      - action: mobile_app_dein_iphone
+      - action: mobile_app_dein_ipad
+      - action: mobile_app_tablet
+```
+
+Die genauen Namen zeigt *Entwicklerwerkzeuge → Aktionen*, wenn du „notify.mobile_app"
+eintippst. Home Assistant neu starten, dann in den Bridge-Optionen (Zahnrad) bei
+**Benachrichtigungsdienst für Timer** `notify.kueche` wählen. Ein Gerät bekommt den
+Push nur, wenn die Home-Assistant-App darauf installiert und angemeldet ist.
+
+**Wandtablet ohne Home-Assistant-App** (Dashboard im Browser oder in einer Kiosk-App):
+Dort kommt kein Push an. Stattdessen eine Ansage, ausgelöst von der Atelier-Meldung:
+
+```yaml
+alias: Küchentimer abgelaufen – Ansage
+triggers:
+  - trigger: persistent_notification
+    update_type: [added]
+conditions:
+  - "{{ trigger.notification.notification_id.startswith('mealie_atelier_') }}"
+actions:
+  - action: tts.speak
+    target:
+      entity_id: tts.DEINE_SPRACHAUSGABE
+    data:
+      media_player_entity_id: media_player.KUECHE
+      message: "{{ trigger.notification.message }}"
+```
+
+`media_player.KUECHE` ist ein Küchenlautsprecher — oder das Tablet selbst, wenn es
+als Mediaplayer eingebunden ist (z.B. über Fully Kiosk).
+
+> **Nicht den Nur-Lesen-Modus der Bridge einschalten.** Dann laufen Timer laut
+> Atelier-Anleitung nur noch auf dem jeweiligen Gerät — und der Modus gilt für die
+> ganze Bridge, nicht nur für ein Tablet.
+
+Die Gruppe `notify.kueche` eignet sich auch für die Sonntags-Erinnerung weiter unten:
+Dann kommt sie auf allen Geräten an.
 
 ## 6. Bring!
 
@@ -189,7 +247,7 @@ conditions:
   - condition: time
     weekday: [sun]
 actions:
-  - action: notify.mobile_app_DEIN_IPHONE
+  - action: notify.kueche   # oder nur ein Gerät: notify.mobile_app_DEIN_IPHONE
     data:
       title: "🛒 Wocheneinkauf"
       message: "Wochenplan prüfen und Zutaten freigeben"
@@ -197,7 +255,8 @@ actions:
         url: "http://192.168.2.227:3000/#einkauf"
 ```
 
-`DEIN_IPHONE` ersetzt du durch den Namen aus *Einstellungen → Geräte & Dienste →
+`notify.kueche` ist die Gruppe aus dem Abschnitt zu den Küchentimern. Ohne Gruppe
+nimmst du `notify.mobile_app_…` mit dem Namen aus *Einstellungen → Geräte & Dienste →
 Mobile App*. Lieber erst planen? Dann `#wochenplan` statt `#einkauf`.
 
 > **Beim ersten Antippen** öffnet iOS den Link in Safari, nicht in der App auf dem
