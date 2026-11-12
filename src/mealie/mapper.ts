@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Recipe, Zutat } from "../llm/recipeSchema.ts";
+import { stepIngredientIndices } from "../llm/stepIngredients.ts";
 
 /**
  * Rezept -> Mealie. Reine Funktionen, ohne Netz, in tests/mealie.test.ts
@@ -118,36 +119,19 @@ export function mapIngredients(
 /**
  * Verknuepft jeden Schritt mit den Zutaten, die er verwendet. Mealies
  * Kochmodus zeigt diese dann neben dem Schritt an - mit Menge und
- * mitgerechnet, wenn du die Portionen aenderst.
- *
- * Nur wenn die Liste genau zu den Schritten passt: Hat jemand im Editor einen
- * Schritt geloescht, waeren alle folgenden Verknuepfungen um eins verrutscht.
- * Dann lieber keine als falsche.
+ * mitgerechnet, wenn du die Portionen aenderst. Welche das sind, entscheidet
+ * dieselbe Funktion, die auch die Zeile unter dem Schritt in Notion fuellt.
  */
 export function linkSteps(
   recipe: Recipe,
   ingredients: Record<string, unknown>[],
 ): { referenceId: string }[][] {
-  const leer = recipe.schritte.map(() => []);
-  const liste = recipe.schritte_zutaten;
-  if (!liste || liste.length !== recipe.schritte.length) return leer;
-
-  // Jede Zutat unter allen Namen, unter denen ein Schritt sie meinen kann:
-  // dem vollen Text, dem Teil vor dem Komma, dem Lebensmittel.
-  const eintraege = recipe.zutaten.flatMap((g) => g.eintraege);
-  const nachName = new Map<string, string[]>();
-  eintraege.forEach((z, i) => {
-    const ref = ingredients[i]?.referenceId as string | undefined;
-    if (!ref) return;
-    const namen = [z.zutat, z.zutat.split(",")[0] ?? "", z.lebensmittel ?? ""].map(norm).filter(Boolean);
-    for (const n of new Set(namen)) nachName.set(n, [...(nachName.get(n) ?? []), ref]);
-  });
-
-  return liste.map((namen) => {
-    const refs = new Set<string>();
-    for (const n of namen) for (const r of nachName.get(norm(n)) ?? []) refs.add(r);
-    return [...refs].map((referenceId) => ({ referenceId }));
-  });
+  return stepIngredientIndices(recipe).map((indizes) =>
+    indizes
+      .map((i) => ingredients[i]?.referenceId as string | undefined)
+      .filter((r): r is string => Boolean(r))
+      .map((referenceId) => ({ referenceId })),
+  );
 }
 
 /** Der PATCH-Inhalt. Nur die Felder, die wir besitzen - der Rest bleibt in Mealie, wie er ist. */

@@ -38,6 +38,9 @@ describe("recipeFromNotionPage", () => {
         { gruppe: "Soße", eintraege: [{ menge: "100 ml", zutat: "Sahne" }] },
       ],
       schritte: ["Pasta kochen.", "Soße rühren."],
+      // Die Zutatenzeile unter den Schritten darf beim Zurücklesen nicht im
+      // Schritttext landen.
+      schritte_zutaten: [["Pasta", "Salz"], ["Sahne"]],
       pro_tipp: "Nudelwasser aufheben.",
     });
     const blocks = alsNotionAntwort(

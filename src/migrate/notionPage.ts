@@ -1,4 +1,5 @@
 import { RecipeSchema, type Recipe } from "../llm/recipeSchema.ts";
+import { STEP_INGREDIENTS_MARK } from "../notion/blocks.ts";
 
 /**
  * Liest ein Rezept aus einer Notion-Seite zurueck - fuer die einmalige
@@ -140,7 +141,14 @@ export function recipeFromNotionPage(
       if (!gruppen.length) gruppen.push({ gruppe: "Zutaten", eintraege: [] });
       gruppen[gruppen.length - 1]!.eintraege.push(splitIngredient(text));
     } else if (abschnitt === "schritte" && (LISTE.has(block.type) || block.type === "paragraph")) {
-      schritte.push(text);
+      // Die Zutatenzeile, die die App unter jeden Schritt schreibt, ist
+      // Anzeige - zum Schritt selbst gehoert sie nicht.
+      const schritt = text
+        .split("\n")
+        .filter((zeile) => !zeile.startsWith(STEP_INGREDIENTS_MARK))
+        .join("\n")
+        .trim();
+      if (schritt) schritte.push(schritt);
     }
   }
 

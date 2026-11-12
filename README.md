@@ -211,7 +211,7 @@ MEALIE_API_TOKEN=…
 |---|---|
 | Zutaten | **zerlegt** in Menge, Einheit und Lebensmittel — das macht Gemini gleich beim Erstellen. Nur so fasst Mealies Einkaufsliste „200 g Mehl" und „100 g Mehl" zu einer Zeile zusammen, und nur so klappt die Portionsumrechnung. Fehlende Lebensmittel und Einheiten legt die App in Mealie an. |
 | Gruppen („Für den Teig") | Überschrift am ersten Eintrag der Gruppe |
-| Schritte | mit den Zutaten verknüpft, die sie verwenden — Mealies Kochmodus zeigt sie samt Menge neben dem Schritt und rechnet beim Ändern der Portionen mit |
+| Schritte | mit den Zutaten verknüpft, die sie verwenden — Mealies Kochmodus zeigt sie samt Menge neben dem Schritt und rechnet beim Ändern der Portionen mit. In Notion steht dieselbe Angabe grau unter dem Schritt („↳ 200 g Mehl · 2 Eier“). |
 | Tags | fehlende werden angelegt — Mealie würde sie sonst stillschweigend verwerfen |
 | Küche | Kategorie |
 | Pro-Tipp, KI-Hinweis | Notizen |

@@ -53,9 +53,9 @@ export const RecipeSchema = z.object({
   schritte: z.array(z.string().min(1)).min(1),
   /**
    * Parallel zu `schritte`: welche Zutaten jeder Schritt verwendet - beim
-   * Namen, so wie er in `zutat` steht. Daraus wird in Mealie die Verknuepfung
-   * Schritt -> Zutat, mit der der Kochmodus die Zutaten samt Menge neben dem
-   * Schritt zeigt. Ueber Namen statt Nummern, weil sich ein Modell beim
+   * Namen, so wie er in `zutat` steht. Daraus stehen die Zutaten samt Menge
+   * neben dem Schritt: in Notion als Zeile darunter, in Mealie als
+   * Verknuepfung, die der Kochmodus anzeigt (siehe stepIngredients.ts). Ueber Namen statt Nummern, weil sich ein Modell beim
    * Abzaehlen leicht vertut und eine im Editor geloeschte Zutat sonst alle
    * folgenden Nummern verschoebe.
    *
@@ -152,11 +152,7 @@ export const GEMINI_RESPONSE_SCHEMA = {
     schritte: {
       type: "array",
       items: { type: "string" },
-      description:
-        "Ein Arbeitsschritt pro Eintrag, im Imperativ, ohne eigene Nummerierung. " +
-        "Nenne bei jeder Zutat, die im Schritt verwendet wird, die Menge dazu: " +
-        "'200 g Mehl, 2 Eier und 250 ml Milch glatt rühren.' Wird eine Zutat auf " +
-        "mehrere Schritte verteilt, die jeweilige Teilmenge ('die Hälfte der Butter').",
+      description: "Ein Arbeitsschritt pro Eintrag, im Imperativ, ohne eigene Nummerierung",
     },
     schritte_zutaten: {
       type: "array",

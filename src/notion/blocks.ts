@@ -1,5 +1,9 @@
 import type { Recipe } from "../llm/recipeSchema.ts";
 import { truncate } from "./mapper.ts";
+import { stepIngredientLabels } from "../llm/stepIngredients.ts";
+
+/** Kennzeichnet die Zutatenzeile unter einem Schritt - damit sie beim Zuruecklesen erkannt wird. */
+export const STEP_INGREDIENTS_MARK = "↳ ";
 
 /**
  * Rendert die Rezept-Karte als Notion-Bloecke. Reine Funktionen, in
@@ -136,13 +140,29 @@ export function buildRecipeBlocks(recipe: Recipe, opts: BlockOptions): Block[] {
 
   // ── Zubereitung ────────────────────────────────────────────────────────────
   blocks.push(heading("Zubereitung"));
-  for (const schritt of recipe.schritte) {
+  // Unter jedem Schritt, was er braucht - samt Menge. Beim Kochen muss so
+  // niemand zur Zutatenliste zurueckscrollen. Im selben Block statt als
+  // Unterpunkt, damit die Nummerierung der Schritte nicht zerfaellt.
+  const zutatenJeSchritt = stepIngredientLabels(recipe);
+  recipe.schritte.forEach((schritt, i) => {
+    const zutaten = zutatenJeSchritt[i];
     blocks.push({
       object: "block",
       type: "numbered_list_item",
-      numbered_list_item: { rich_text: text(schritt) },
+      numbered_list_item: {
+        rich_text: zutaten
+          ? [
+              ...text(schritt),
+              {
+                type: "text" as const,
+                text: { content: truncate(`\n${STEP_INGREDIENTS_MARK}${zutaten}`, NOTION_TEXT_LIMIT) },
+                annotations: { color: "gray" as const, italic: true },
+              },
+            ]
+          : text(schritt),
+      },
     });
-  }
+  });
 
   // ── Pro-Tipp ───────────────────────────────────────────────────────────────
   if (recipe.pro_tipp.trim()) {

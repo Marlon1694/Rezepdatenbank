@@ -51,11 +51,6 @@ strukturierte Rezept-Karte für meine Notion-Datenbank nach exakt diesem Schema:
   bekommt eine einzige Gruppe namens `Zutaten` — erzwinge keine künstliche Aufteilung.
 - **Schritte:** Ein Arbeitsschritt pro Eintrag, Imperativ ("Zwiebeln würfeln."),
   keine Nummerierung im Text selbst (die macht Notion).
-- **Mengen in den Schritten:** Nenne bei jeder Zutat, die in einem Schritt verwendet
-  wird, die Menge dazu — „200 g Mehl, 2 Eier und 250 ml Milch glatt rühren.“ statt
-  „Mehl, Eier und Milch glatt rühren.“ So muss beim Kochen niemand zur Zutatenliste
-  zurückblättern. Wird eine Zutat auf mehrere Schritte verteilt, nenne die jeweilige
-  Teilmenge („die Hälfte der Butter“, „100 ml der Brühe“).
 
 {{ZUSATZFELDER}}
 
