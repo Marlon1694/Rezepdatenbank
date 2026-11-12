@@ -253,8 +253,47 @@ describe("Gleiche Zutat in zwei Gruppen", () => {
     expect(stepIngredientLabels(r)).toEqual(["1000 g Mehl · 450 g Wasser", "230 g Wasser · 30 g Salz"]);
   });
 
-  it("ordnet einen mehrdeutigen Namen keiner Zutat zu statt beiden", () => {
-    const r = { ...biga(), schritte_zutaten: [["Mehl", "Wasser"], ["Salz"]] };
-    expect(stepIngredientLabels(r)).toEqual(["1000 g Mehl", "30 g Salz"]);
+  it("ordnet einen mehrdeutigen Namen nur einer Zutat zu, der ersten noch freien", () => {
+    const r = { ...biga(), schritte_zutaten: [["Mehl", "Wasser"], ["Wasser", "Salz"]] };
+    expect(stepIngredientLabels(r)).toEqual(["1000 g Mehl · 450 g Wasser", "230 g Wasser · 30 g Salz"]);
+  });
+});
+
+describe("Gleiche Zutat mit gleicher Menge in zwei Gruppen", () => {
+  // Hackbällchen Toscana: 2 TL Kräuter in die Bällchen, 2 TL in die Sauce.
+  const toscana = () =>
+    RecipeSchema.parse({
+      titel: "Hackbällchen Toscana",
+      zutaten: [
+        {
+          gruppe: "Hackbällchen",
+          eintraege: [
+            { menge: "500 g", zutat: "Hackfleisch" },
+            { menge: "2 TL", zutat: "Italienische Kräuter" },
+          ],
+        },
+        {
+          gruppe: "Für die Sauce",
+          eintraege: [
+            { menge: "2 EL", zutat: "Tomatenmark" },
+            { menge: "2 TL", zutat: "Italienische Kräuter" },
+          ],
+        },
+      ],
+      schritte: [
+        "Italienische Kräuter und Tomatenmark anrösten.",
+        "Hackfleisch mit italienischen Kräutern verkneten.",
+      ],
+      schritte_zutaten: [
+        ["Italienische Kräuter", "Tomatenmark"],
+        ["Hackfleisch", "Italienische Kräuter"],
+      ],
+    });
+
+  it("gibt jedem Schritt seine Kräuter, statt sie wegzulassen", () => {
+    expect(stepIngredientLabels(toscana())).toEqual([
+      "2 TL Italienische Kräuter · 2 EL Tomatenmark",
+      "500 g Hackfleisch · 2 TL Italienische Kräuter",
+    ]);
   });
 });

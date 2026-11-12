@@ -42,10 +42,17 @@ export function stepIngredientIndices(recipe: Recipe): number[][] {
     const treffer = new Set<number>();
     for (const n of namen) {
       const kandidaten = nachName.get(norm(n)) ?? [];
-      // Ein Name, der zu mehreren Zutaten passt ("Wasser"), ist keine
-      // Aussage ueber eine bestimmte - lieber keine Zeile als die falsche.
-      // Eindeutig wird er mit Menge: "450 g Wasser".
-      if (kandidaten.length === 1) treffer.add(kandidaten[0]!);
+      if (kandidaten.length === 1) {
+        treffer.add(kandidaten[0]!);
+        continue;
+      }
+      // Passt der Name zu mehreren Zutaten - "2 TL Italienische Kräuter" für
+      // die Hackbällchen und genauso für die Sauce -, nimmt der Schritt die
+      // erste, die noch kein früherer Schritt verwendet hat. Gleiche Zutaten
+      // in zwei Gruppen kommen fast immer in verschiedenen Schritten dran.
+      // Sind alle schon verwendet, keine: lieber keine Zeile als die falsche.
+      const frei = kandidaten.find((i) => !schonDran.has(i) && !treffer.has(i));
+      if (frei !== undefined) treffer.add(frei);
     }
     // "Den Teig nachkneten" ist kein Schritt mit Mehl, Hefe und Wasser - die
     // stecken seit Schritt 2 im Teig. Was frueher schon dran war, erscheint
