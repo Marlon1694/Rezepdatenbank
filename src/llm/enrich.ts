@@ -36,8 +36,8 @@ export const ENRICH_SCHEMA = {
             type: "number",
             description:
               "Die Menge als Zahl: 200 bei '200 g', 0.5 bei '1/2 TL', 2 bei '2 Eier'. Bei " +
-              "nicht-metrischen Angaben die metrische Umrechnung. Bei einer Spanne die " +
-              "Mitte. Weglassen, wenn keine Zahl genannt ist.",
+              "nicht-metrischen Angaben die metrische Umrechnung. Bei einer Spanne " +
+              "('1-2 Zehen') die untere Zahl. Weglassen, wenn keine Zahl genannt ist.",
           },
           einheit: {
             type: "string",
@@ -48,8 +48,12 @@ export const ENRICH_SCHEMA = {
           lebensmittel: {
             type: "string",
             description:
-              "Nur das Lebensmittel, im Singular, ohne Menge und Zubereitungshinweis: " +
-              "'Zwiebel' bei '2 Zwiebeln, fein gewürfelt'.",
+              "Nur das Lebensmittel, so wie es auf einem Einkaufszettel steht: im " +
+              "Singular, ohne Menge, ohne Zubereitung, Form oder Zuschnitt. 'Zwiebel' " +
+              "bei '2 Zwiebeln, fein gewürfelt', 'Hähnchenbrust' bei " +
+              "'Hähnchenbruststücke', 'Brokkoli' bei 'Brokkoliröschen', 'Orzo' bei " +
+              "'Orzo (Risoni-Nudeln)'. Keine Beispiele oder Alternativen: 'Petersilie' " +
+              "bei 'Kräuter, z. B. Petersilie oder Basilikum'.",
           },
         },
         required: ["nr"],
@@ -107,7 +111,11 @@ const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : und
  * Was nicht passt - falsche Nummern, negative Mengen -, wird verworfen statt
  * geraten.
  */
-export function mergeEnrichment(recipe: Recipe, raw: unknown): Recipe {
+export function mergeEnrichment(
+  recipe: Recipe,
+  raw: unknown,
+  opts: { ersetzen?: boolean } = {},
+): Recipe {
   const antwort = (raw ?? {}) as Antwort;
   const eintraege = recipe.zutaten.flatMap((g) => g.eintraege);
 
@@ -127,7 +135,16 @@ export function mergeEnrichment(recipe: Recipe, raw: unknown): Recipe {
     ...g,
     eintraege: g.eintraege.map((z) => {
       const neu = proZutat.get(i++);
-      // Was schon da ist, gilt - ergaenzt wird nur, was fehlt.
+      // Was schon da ist, gilt - ergaenzt wird nur, was fehlt. Ausser beim
+      // erneuten Aufwerten: Dann ersetzt die neue Zerlegung die alte.
+      if (opts.ersetzen && neu) {
+        return {
+          ...z,
+          anzahl: neu.anzahl ?? null,
+          einheit: neu.einheit ?? null,
+          lebensmittel: neu.lebensmittel ?? null,
+        };
+      }
       return {
         ...z,
         anzahl: z.anzahl ?? neu?.anzahl ?? null,
@@ -160,7 +177,10 @@ export function mergeEnrichment(recipe: Recipe, raw: unknown): Recipe {
   };
 }
 
-export async function enrichRecipe(recipe: Recipe): Promise<Recipe> {
+export async function enrichRecipe(
+  recipe: Recipe,
+  opts: { ersetzen?: boolean } = {},
+): Promise<Recipe> {
   const raw = await generateJson({ prompt: enrichPrompt(recipe), schema: ENRICH_SCHEMA });
-  return mergeEnrichment(recipe, raw);
+  return mergeEnrichment(recipe, raw, opts);
 }

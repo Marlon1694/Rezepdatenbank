@@ -294,6 +294,14 @@ Je Rezept eine KI-Anfrage, nur mit dem Rezepttext:
 Titel, Zutatentexte und Schritte ändert die KI nicht — sie liefert nur Nummern und
 die drei Zutatenfelder zurück.
 
+**`--neu`** zusammen mit `--aufwerten` zerlegt auch schon aufgewertete Rezepte noch
+einmal — etwa nachdem die Regeln dafür besser geworden sind. Kostet je Rezept eine
+KI-Anfrage; bei vielen Rezepten auf zwei Tage verteilen, falls das Gemini-Kontingent
+knapp wird.
+
+**Spannen** wie „1–2 Zehen" speichert Mealie als untere Zahl, die ganze Angabe steht
+als Notiz dabei: „1 Zehe Knoblauch — 1–2 Zehen, gehackt".
+
 ## Wenn etwas hakt
 
 | Meldung | Ursache |

@@ -62,6 +62,18 @@ export function ingredientNote(zutat: string, lebensmittel: string): string {
   return "";
 }
 
+/**
+ * "1–2 Zehen", "ca. 300-400 ml" -> 1 bzw. 300. Mealie speichert nur eine
+ * Zahl. Die Mitte ergaebe "1 ½ Zehen" - das schreibt niemand. Gespeichert
+ * wird deshalb die untere Zahl, und die ganze Angabe steht als Notiz dabei.
+ */
+export function rangeLow(menge: string | null | undefined): number | undefined {
+  const m = /(\d+(?:[.,]\d+)?)\s*(?:[-–—]|bis)\s*\d+(?:[.,]\d+)?/.exec(menge ?? "");
+  if (!m?.[1]) return undefined;
+  const n = Number(m[1].replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 function originalText(z: Zutat): string {
   return [z.menge, z.zutat].filter(Boolean).join(" ").trim();
 }
@@ -88,13 +100,15 @@ export function mapIngredients(
       const unit = z.einheit ? lookups.units.get(norm(z.einheit)) : undefined;
 
       if (food) {
+        const spanne = rangeLow(z.menge);
+        const notiz = ingredientNote(z.zutat, food.name);
         result.push({
           referenceId: newId(),
           title,
-          quantity: z.anzahl ?? 0,
+          quantity: spanne ?? z.anzahl ?? 0,
           unit: unit ?? null,
           food,
-          note: ingredientNote(z.zutat, food.name),
+          note: spanne ? [z.menge!.trim(), notiz].filter(Boolean).join(", ") : notiz,
           originalText: originalText(z),
         });
         return;

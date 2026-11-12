@@ -4,6 +4,7 @@
  *   npm run migrate:mealie                 zeigt nur, was passieren wuerde
  *   npm run migrate:mealie -- --ausfuehren  legt wirklich an
  *   ... --ausfuehren --aufwerten            und ergaenzt alte Rezepte (siehe unten)
+ *   ... --ausfuehren --aufwerten --neu      wertet alle erneut auf, auch schon aufgewertete
  *
  * Zwei Quellen:
  *   1. Der Verlauf der App. Dort liegt jedes Rezept strukturiert vor - es geht
@@ -45,6 +46,8 @@ import type { GeneratedImage } from "../src/llm/image.ts";
 
 const ausfuehren = process.argv.includes("--ausfuehren");
 const aufwerten = process.argv.includes("--aufwerten");
+// Alles noch einmal zerlegen - etwa nachdem die Regeln dafuer besser wurden.
+const neu = aufwerten && process.argv.includes("--neu");
 
 interface NotionPage {
   id: string;
@@ -137,7 +140,7 @@ async function main(): Promise<void> {
   }
   for (const job of jobs) {
     const recipe = bereinigt(job.recipe!);
-    const alt = aufwerten && needsEnrichment(recipe);
+    const alt = aufwerten && (neu || needsEnrichment(recipe));
     if (job.mealieSlug && !alt) {
       if (job.notionPageId) ausVerlauf.set(ohneStrich(job.notionPageId), null);
       uebersprungen.push(`${job.recipe!.titel} — schon in Mealie`);
@@ -204,7 +207,8 @@ async function main(): Promise<void> {
         sourceUrl: parsed.sourceUrl,
         page,
         notionPageId: page.id,
-        aufwerten: aufwerten && !parsed.mitZutatenzeilen && needsEnrichment(parsed.recipe),
+        aufwerten:
+          aufwerten && (neu || (!parsed.mitZutatenzeilen && needsEnrichment(parsed.recipe))),
       });
     }
   }
@@ -236,7 +240,9 @@ async function main(): Promise<void> {
     const n = kandidaten.filter((k) => k.aufwerten).length;
     if (n) console.log(`\n  ${n} Rezept(e) würden aufgewertet - je eine KI-Anfrage.`);
     console.log(`\n  Probelauf - nichts angelegt. Wirklich übernehmen mit:`);
-    console.log(`    npm run migrate:mealie -- --ausfuehren${aufwerten ? " --aufwerten" : ""}\n`);
+    console.log(
+      `    npm run migrate:mealie -- --ausfuehren${aufwerten ? " --aufwerten" : ""}${neu ? " --neu" : ""}\n`,
+    );
     return;
   }
 
@@ -254,7 +260,7 @@ async function main(): Promise<void> {
       let aufgewertet = false;
       if (k.aufwerten && !kontingentWeg) {
         try {
-          recipe = await enrichRecipe(recipe);
+          recipe = await enrichRecipe(recipe, { ersetzen: neu });
           aufgewertet = true;
         } catch (err) {
           // Ohne Aufwertung geht es trotzdem nach Mealie - nur ohne den Komfort.

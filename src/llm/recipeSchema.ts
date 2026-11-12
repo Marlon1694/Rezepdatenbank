@@ -146,8 +146,9 @@ export const GEMINI_RESPONSE_SCHEMA = {
                   type: "number",
                   description:
                     "Die Menge als Zahl: 200 bei '200 g', 0.5 bei '1/2 TL', 2 bei '2 Eier'. " +
-                    "Bei nicht-metrischen Angaben die metrische Umrechnung. Weglassen, " +
-                    "wenn keine Zahl genannt ist ('eine Prise', 'nach Geschmack').",
+                    "Bei nicht-metrischen Angaben die metrische Umrechnung. Bei einer Spanne " +
+                    "('1-2 Zehen') die untere Zahl. Weglassen, wenn keine Zahl genannt ist " +
+                    "('eine Prise', 'nach Geschmack').",
                 },
                 einheit: {
                   type: "string",
@@ -159,8 +160,12 @@ export const GEMINI_RESPONSE_SCHEMA = {
                 lebensmittel: {
                   type: "string",
                   description:
-                    "Nur das Lebensmittel, im Singular, ohne Menge und ohne " +
-                    "Zubereitungshinweis: 'Zwiebel' bei '2 Zwiebeln, fein gewürfelt'.",
+                    "Nur das Lebensmittel, so wie es auf einem Einkaufszettel steht: im " +
+                    "Singular, ohne Menge, ohne Zubereitung, Form oder Zuschnitt. " +
+                    "'Zwiebel' bei '2 Zwiebeln, fein gewürfelt', 'Hähnchenbrust' bei " +
+                    "'Hähnchenbruststücke', 'Brokkoli' bei 'Brokkoliröschen', 'Orzo' bei " +
+                    "'Orzo (Risoni-Nudeln)'. Keine Beispiele oder Alternativen: 'Petersilie' " +
+                    "bei 'Kräuter, z. B. Petersilie oder Basilikum'.",
                 },
               },
               required: ["zutat"],
