@@ -157,6 +157,17 @@ export function mergeEnrichment(
   // Ueber die Nummer statt ueber den Namen: So kommt genau der Text aus
   // `zutat` hinein, und die Zuordnung findet die Zutat sicher wieder.
   const proSchritt = recipe.schritte.map(() => new Set<string>());
+  // Steht derselbe Name mehrfach in der Liste - "Wasser" fuer Vorteig und
+  // Hauptteig -, fuehrte der Name allein zu beiden. Dann mit Menge: "450 g Wasser".
+  const anzahlNamen = new Map<string, number>();
+  for (const z of eintraege) {
+    const k = z.zutat.trim().toLowerCase();
+    anzahlNamen.set(k, (anzahlNamen.get(k) ?? 0) + 1);
+  }
+  const eindeutig = (z: (typeof eintraege)[number]) =>
+    (anzahlNamen.get(z.zutat.trim().toLowerCase()) ?? 0) > 1 && z.menge
+      ? `${z.menge} ${z.zutat}`
+      : z.zutat;
   let irgendwas = false;
   for (const s of antwort.schritte ?? []) {
     const nr = typeof s.schritt === "number" ? s.schritt : NaN;
@@ -164,7 +175,7 @@ export function mergeEnrichment(
     for (const zNr of Array.isArray(s.zutaten) ? s.zutaten : []) {
       const z = typeof zNr === "number" && Number.isInteger(zNr) ? eintraege[zNr - 1] : undefined;
       if (z) {
-        proSchritt[nr - 1]!.add(z.zutat);
+        proSchritt[nr - 1]!.add(eindeutig(z));
         irgendwas = true;
       }
     }

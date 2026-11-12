@@ -39,7 +39,13 @@ export function stepIngredientIndices(recipe: Recipe): number[][] {
 
   return liste.map((namen) => {
     const treffer = new Set<number>();
-    for (const n of namen) for (const i of nachName.get(norm(n)) ?? []) treffer.add(i);
+    for (const n of namen) {
+      const kandidaten = nachName.get(norm(n)) ?? [];
+      // Ein Name, der zu mehreren Zutaten passt ("Wasser"), ist keine
+      // Aussage ueber eine bestimmte - lieber keine Zeile als die falsche.
+      // Eindeutig wird er mit Menge: "450 g Wasser".
+      if (kandidaten.length === 1) treffer.add(kandidaten[0]!);
+    }
     return [...treffer].sort((a, b) => a - b);
   });
 }

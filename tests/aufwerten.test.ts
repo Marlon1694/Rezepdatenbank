@@ -20,6 +20,7 @@ vi.mock("../src/notion/client.ts", () => ({
 
 const { needsEnrichment, mergeEnrichment, enrichPrompt } = await import("../src/llm/enrich.ts");
 const { withoutStepLine, withStepLine, addStepLinesToPage } = await import("../src/notion/stepLines.ts");
+const { stepIngredientLabels } = await import("../src/llm/stepIngredients.ts");
 
 /** Ein Rezept, wie es vor den zerlegten Zutaten gespeichert wurde. */
 const altesRezept = () =>
@@ -229,5 +230,31 @@ describe("Zweiter Lauf über Notion-Seiten", () => {
     expect("recipe" in nachher && nachher.mitZutatenzeilen).toBe(true);
     // Der Schritt selbst bleibt ohne die Zeile.
     expect("recipe" in nachher && nachher.recipe.schritte).toEqual(["Verrühren."]);
+  });
+});
+
+describe("Gleiche Zutat in zwei Gruppen", () => {
+  const biga = () =>
+    RecipeSchema.parse({
+      titel: "Biga",
+      zutaten: [
+        { gruppe: "Biga", eintraege: [{ menge: "1000 g", zutat: "Mehl" }, { menge: "450 g", zutat: "Wasser" }] },
+        { gruppe: "Hauptteig", eintraege: [{ menge: "230 g", zutat: "Wasser" }, { menge: "30 g", zutat: "Salz" }] },
+      ],
+      schritte: ["Biga mischen.", "Hauptteig kneten."],
+    });
+
+  it("benennt die doppelte Zutat beim Aufwerten mit Menge", () => {
+    const r = mergeEnrichment(biga(), {
+      zutaten: [],
+      schritte: [{ schritt: 1, zutaten: [1, 2] }, { schritt: 2, zutaten: [3, 4] }],
+    });
+    expect(r.schritte_zutaten).toEqual([["Mehl", "450 g Wasser"], ["230 g Wasser", "Salz"]]);
+    expect(stepIngredientLabels(r)).toEqual(["1000 g Mehl · 450 g Wasser", "230 g Wasser · 30 g Salz"]);
+  });
+
+  it("ordnet einen mehrdeutigen Namen keiner Zutat zu statt beiden", () => {
+    const r = { ...biga(), schritte_zutaten: [["Mehl", "Wasser"], ["Salz"]] };
+    expect(stepIngredientLabels(r)).toEqual(["1000 g Mehl", "30 g Salz"]);
   });
 });
