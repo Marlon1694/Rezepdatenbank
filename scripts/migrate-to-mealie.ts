@@ -39,7 +39,8 @@ import {
   type NotionBlock,
   type NotionProperty,
 } from "../src/migrate/notionPage.ts";
-import type { Recipe } from "../src/llm/recipeSchema.ts";
+import { RecipeSchema, type Recipe } from "../src/llm/recipeSchema.ts";
+import { pickPerLink, similarTitles } from "../src/migrate/dedupe.ts";
 import type { GeneratedImage } from "../src/llm/image.ts";
 
 const ausfuehren = process.argv.includes("--ausfuehren");
@@ -104,6 +105,12 @@ interface Kandidat {
   aufwerten: boolean;
 }
 
+/** Gespeicherte Rezepte durchs Schema - bereinigt etwa doppelte Mengen von gestern. */
+function bereinigt(recipe: Recipe): Recipe {
+  const r = RecipeSchema.safeParse(recipe);
+  return r.success ? r.data : recipe;
+}
+
 async function main(): Promise<void> {
   if (!mealieEnabled()) {
     throw new Error("Mealie ist nicht eingerichtet: MEALIE_URL und MEALIE_API_TOKEN in der .env setzen.");
@@ -116,22 +123,30 @@ async function main(): Promise<void> {
   const uebersprungen: string[] = [];
 
   // ── 1. Verlauf der App ───────────────────────────────────────────────────
-  const jobs = listJobs(100_000).filter((j) => j.status === "done" && j.recipe);
+  const { nehmen: jobs, aeltere } = pickPerLink(
+    listJobs(100_000).filter((j) => j.status === "done" && j.recipe),
+  );
   const ohneStrich = (id: string) => id.replace(/-/g, "");
   // Notion-Seite -> Kandidat aus dem Verlauf, um ihm spaeter das Titelbild
   // der Seite zu geben.
   const ausVerlauf = new Map<string, Kandidat | null>();
+  for (const job of aeltere) {
+    // Ihre Notion-Seite soll auch nicht als eigenes Rezept wieder auftauchen.
+    if (job.notionPageId) ausVerlauf.set(ohneStrich(job.notionPageId), null);
+    uebersprungen.push(`${job.recipe!.titel} — ältere Fassung desselben Links`);
+  }
   for (const job of jobs) {
-    const alt = aufwerten && needsEnrichment(job.recipe!);
+    const recipe = bereinigt(job.recipe!);
+    const alt = aufwerten && needsEnrichment(recipe);
     if (job.mealieSlug && !alt) {
       if (job.notionPageId) ausVerlauf.set(ohneStrich(job.notionPageId), null);
       uebersprungen.push(`${job.recipe!.titel} — schon in Mealie`);
       continue;
     }
     const k: Kandidat = {
-      titel: job.recipe!.titel,
+      titel: recipe.titel,
       herkunft: "Verlauf",
-      recipe: job.recipe!,
+      recipe,
       sourceUrl: job.url,
       jobId: job.id,
       mealieSlug: job.mealieSlug ?? undefined,
@@ -205,6 +220,12 @@ async function main(): Promise<void> {
       `    • ${k.titel}  (${k.herkunft}, ${z} Zutaten, ${k.recipe.schritte.length} Schritte` +
         `${extra ? `; ${extra}` : ""})`,
     );
+  }
+  const aehnlich = similarTitles(kandidaten.map((k) => k.titel));
+  if (aehnlich.length) {
+    console.log(`\n  Achtung, ähnliche Titel (verschiedene Links) - würden einzeln angelegt:`);
+    for (const g of aehnlich) console.log(`    ! ${g.join("  |  ")}`);
+    console.log(`    Doppelte vorher in der App im Verlauf löschen, dann den Probelauf wiederholen.`);
   }
   if (uebersprungen.length) {
     console.log(`\n  ${uebersprungen.length} übersprungen:`);
