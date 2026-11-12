@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Recipe, Zutat } from "../llm/recipeSchema.ts";
 
 /**
@@ -69,7 +70,11 @@ function isGenericGroup(name: string, groupCount: number): boolean {
   return groupCount === 1 && /^(zutaten|hauptzutaten|alle zutaten)$/i.test(name.trim());
 }
 
-export function mapIngredients(recipe: Recipe, lookups: Pick<Lookups, "foods" | "units">) {
+export function mapIngredients(
+  recipe: Recipe,
+  lookups: Pick<Lookups, "foods" | "units">,
+  newId: () => string = randomUUID,
+) {
   const result: Record<string, unknown>[] = [];
 
   for (const gruppe of recipe.zutaten) {
@@ -83,6 +88,7 @@ export function mapIngredients(recipe: Recipe, lookups: Pick<Lookups, "foods" | 
 
       if (food) {
         result.push({
+          referenceId: newId(),
           title,
           quantity: z.anzahl ?? 0,
           unit: unit ?? null,
@@ -96,6 +102,7 @@ export function mapIngredients(recipe: Recipe, lookups: Pick<Lookups, "foods" | 
       // Ohne zugeordnetes Lebensmittel bleibt es Freitext. Das ist kein Fehler:
       // Mealie zeigt und kauft es genauso, es fasst nur nichts zusammen.
       result.push({
+        referenceId: newId(),
         title,
         quantity: 0,
         unit: null,
@@ -108,6 +115,41 @@ export function mapIngredients(recipe: Recipe, lookups: Pick<Lookups, "foods" | 
   return result;
 }
 
+/**
+ * Verknuepft jeden Schritt mit den Zutaten, die er verwendet. Mealies
+ * Kochmodus zeigt diese dann neben dem Schritt an - mit Menge und
+ * mitgerechnet, wenn du die Portionen aenderst.
+ *
+ * Nur wenn die Liste genau zu den Schritten passt: Hat jemand im Editor einen
+ * Schritt geloescht, waeren alle folgenden Verknuepfungen um eins verrutscht.
+ * Dann lieber keine als falsche.
+ */
+export function linkSteps(
+  recipe: Recipe,
+  ingredients: Record<string, unknown>[],
+): { referenceId: string }[][] {
+  const leer = recipe.schritte.map(() => []);
+  const liste = recipe.schritte_zutaten;
+  if (!liste || liste.length !== recipe.schritte.length) return leer;
+
+  // Jede Zutat unter allen Namen, unter denen ein Schritt sie meinen kann:
+  // dem vollen Text, dem Teil vor dem Komma, dem Lebensmittel.
+  const eintraege = recipe.zutaten.flatMap((g) => g.eintraege);
+  const nachName = new Map<string, string[]>();
+  eintraege.forEach((z, i) => {
+    const ref = ingredients[i]?.referenceId as string | undefined;
+    if (!ref) return;
+    const namen = [z.zutat, z.zutat.split(",")[0] ?? "", z.lebensmittel ?? ""].map(norm).filter(Boolean);
+    for (const n of new Set(namen)) nachName.set(n, [...(nachName.get(n) ?? []), ref]);
+  });
+
+  return liste.map((namen) => {
+    const refs = new Set<string>();
+    for (const n of namen) for (const r of nachName.get(norm(n)) ?? []) refs.add(r);
+    return [...refs].map((referenceId) => ({ referenceId }));
+  });
+}
+
 /** Der PATCH-Inhalt. Nur die Felder, die wir besitzen - der Rest bleibt in Mealie, wie er ist. */
 export function mapRecipe(recipe: Recipe, lookups: Lookups, opts: MapOptions) {
   const servings = parseServings(recipe.portionen);
@@ -115,6 +157,9 @@ export function mapRecipe(recipe: Recipe, lookups: Lookups, opts: MapOptions) {
   const notes: { title: string; text: string }[] = [];
   if (opts.aiNotice?.trim()) notes.push({ title: "🤖 Hinweis", text: opts.aiNotice.trim() });
   if (recipe.pro_tipp.trim()) notes.push({ title: "💡 Pro-Tipp", text: recipe.pro_tipp.trim() });
+
+  const ingredients = mapIngredients(recipe, lookups);
+  const links = linkSteps(recipe, ingredients);
 
   const extras: Record<string, string> = {};
   if (recipe.schwierigkeit) extras.schwierigkeit = recipe.schwierigkeit;
@@ -129,8 +174,13 @@ export function mapRecipe(recipe: Recipe, lookups: Lookups, opts: MapOptions) {
       : { recipeYield: recipe.portionen ?? null }),
     tags: lookups.tags,
     recipeCategory: lookups.category ? [lookups.category] : [],
-    recipeIngredient: mapIngredients(recipe, lookups),
-    recipeInstructions: recipe.schritte.map((text) => ({ title: "", summary: "", text })),
+    recipeIngredient: ingredients,
+    recipeInstructions: recipe.schritte.map((text, i) => ({
+      title: "",
+      summary: "",
+      text,
+      ingredientReferences: links[i] ?? [],
+    })),
     notes,
     extras,
   };

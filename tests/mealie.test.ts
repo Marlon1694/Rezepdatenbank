@@ -179,7 +179,7 @@ afterAll(() => new Promise<void>((r) => server.close(() => r())));
 const { resetConfigCache } = await import("../src/config.ts");
 const { resetMealieCache } = await import("../src/mealie/client.ts");
 const { upsertMealieRecipe } = await import("../src/mealie/recipes.ts");
-const { mapIngredients, parseServings, ingredientNote, norm } = await import(
+const { mapIngredients, parseServings, ingredientNote, norm, linkSteps } = await import(
   "../src/mealie/mapper.ts"
 );
 const { RecipeSchema } = await import("../src/llm/recipeSchema.ts");
@@ -243,6 +243,23 @@ describe("upsertMealieRecipe", () => {
     expect((gespeichert.recipeInstructions as unknown[]).length).toBe(3);
     expect(gespeichert.notes).toEqual([{ title: "💡 Pro-Tipp", text: "Mit Federweißer servieren." }]);
     expect(state.images).toEqual([{ slug: r.slug, bytes: expect.any(Number), extension: "jpg" }]);
+  });
+
+  it("verknüpft die Schritte mit den Zutaten für den Kochmodus", async () => {
+    const r = await upsertMealieRecipe({
+      recipe: rezept({
+        schritte: ["250 g Mehl kneten.", "2 Zwiebeln und 1 EL Kümmel verteilen.", "Backen."],
+        schritte_zutaten: [["Mehl"], ["Zwiebeln", "Kümmel"], []],
+      }),
+      sourceUrl: "",
+    });
+    const g = state.recipes.get(r.slug)!;
+    const zutaten = g.recipeIngredient as { referenceId: string; note: string }[];
+    const schritte = g.recipeInstructions as { ingredientReferences: { referenceId: string }[] }[];
+    const refs = (i: number) => schritte[i]!.ingredientReferences.map((x) => x.referenceId);
+    expect(refs(0)).toEqual([zutaten[0]!.referenceId]);
+    expect(refs(1)).toEqual([zutaten[2]!.referenceId, zutaten[3]!.referenceId]);
+    expect(refs(2)).toEqual([]);
   });
 
   it("legt fehlende Tags an, statt sie stillschweigend zu verlieren", async () => {
@@ -358,6 +375,59 @@ describe("upsertMealieRecipe", () => {
       process.env.MEALIE_URL = baseUrl;
       resetConfigCache();
     }
+  });
+});
+
+describe("linkSteps", () => {
+  let n = 0;
+  const ids = () => `ref-${++n}`;
+  const basis = () =>
+    RecipeSchema.parse({
+      titel: "Pfannkuchen",
+      zutaten: [
+        {
+          gruppe: "Zutaten",
+          eintraege: [
+            { menge: "200 g", zutat: "Mehl", lebensmittel: "Mehl" },
+            { menge: "2", zutat: "Eier", lebensmittel: "Ei" },
+            { menge: "1", zutat: "Zwiebel, fein gewürfelt", lebensmittel: "Zwiebel" },
+          ],
+        },
+      ],
+      schritte: ["200 g Mehl und 2 Eier verrühren.", "1 Zwiebel anbraten.", "Servieren."],
+      schritte_zutaten: [["Mehl", "Eier"], ["Zwiebel"], []],
+    });
+
+  it("verknüpft jeden Schritt mit seinen Zutaten", () => {
+    n = 0;
+    const r = basis();
+    const zutaten = mapIngredients(r, { foods: new Map(), units: new Map() }, ids);
+    expect(linkSteps(r, zutaten)).toEqual([
+      [{ referenceId: "ref-1" }, { referenceId: "ref-2" }],
+      // "Zwiebel" findet "Zwiebel, fein gewürfelt" über den Teil vor dem Komma.
+      [{ referenceId: "ref-3" }],
+      [],
+    ]);
+  });
+
+  it("verknüpft nichts, wenn die Liste nicht zu den Schritten passt", () => {
+    // Im Editor wurde ein Schritt gelöscht: Jede Verknüpfung danach wäre
+    // um eins verrutscht. Dann lieber gar keine.
+    const r = { ...basis(), schritte: ["Verrühren.", "Servieren."] };
+    const zutaten = mapIngredients(r, { foods: new Map(), units: new Map() }, ids);
+    expect(linkSteps(r, zutaten)).toEqual([[], []]);
+  });
+
+  it("übergeht Namen, die es nicht gibt", () => {
+    const r = { ...basis(), schritte_zutaten: [["Mehl", "Einhorn"], [], []] };
+    const zutaten = mapIngredients(r, { foods: new Map(), units: new Map() }, ids);
+    expect(linkSteps(r, zutaten)[0]).toHaveLength(1);
+  });
+
+  it("verträgt Rezepte ohne Verknüpfung", () => {
+    const r = { ...basis(), schritte_zutaten: undefined };
+    const zutaten = mapIngredients(r, { foods: new Map(), units: new Map() }, ids);
+    expect(linkSteps(r, zutaten)).toEqual([[], [], []]);
   });
 });
 

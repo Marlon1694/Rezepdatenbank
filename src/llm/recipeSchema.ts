@@ -51,6 +51,18 @@ export const RecipeSchema = z.object({
   zeit_minuten: z.number().int().positive().nullish().transform((v) => v ?? null),
   zutaten: z.array(ZutatenGruppeSchema).min(1),
   schritte: z.array(z.string().min(1)).min(1),
+  /**
+   * Parallel zu `schritte`: welche Zutaten jeder Schritt verwendet - beim
+   * Namen, so wie er in `zutat` steht. Daraus wird in Mealie die Verknuepfung
+   * Schritt -> Zutat, mit der der Kochmodus die Zutaten samt Menge neben dem
+   * Schritt zeigt. Ueber Namen statt Nummern, weil sich ein Modell beim
+   * Abzaehlen leicht vertut und eine im Editor geloeschte Zutat sonst alle
+   * folgenden Nummern verschoebe.
+   *
+   * Optional: aeltere Rezepte haben es nicht, und fehlt es, gibt es eben keine
+   * Verknuepfung - am Rezept selbst aendert das nichts.
+   */
+  schritte_zutaten: z.array(z.array(z.string())).nullish(),
   pro_tipp: z.string().default(""),
   /** Optional, nur befuellt wenn die Notion-DB passende Spalten hat. */
   portionen: optionalText,
@@ -140,7 +152,19 @@ export const GEMINI_RESPONSE_SCHEMA = {
     schritte: {
       type: "array",
       items: { type: "string" },
-      description: "Ein Arbeitsschritt pro Eintrag, im Imperativ, ohne eigene Nummerierung",
+      description:
+        "Ein Arbeitsschritt pro Eintrag, im Imperativ, ohne eigene Nummerierung. " +
+        "Nenne bei jeder Zutat, die im Schritt verwendet wird, die Menge dazu: " +
+        "'200 g Mehl, 2 Eier und 250 ml Milch glatt rühren.' Wird eine Zutat auf " +
+        "mehrere Schritte verteilt, die jeweilige Teilmenge ('die Hälfte der Butter').",
+    },
+    schritte_zutaten: {
+      type: "array",
+      description:
+        "Genau so viele Einträge wie schritte, in derselben Reihenfolge. Für jeden " +
+        "Schritt die Zutaten, die darin verwendet werden - jeweils exakt so " +
+        "geschrieben wie im Feld 'zutat'. Leere Liste für Schritte ohne Zutaten.",
+      items: { type: "array", items: { type: "string" } },
     },
     pro_tipp: { type: "string", description: "Leer lassen, wenn im Material keiner vorkommt" },
     portionen: { type: "string" },
