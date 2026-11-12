@@ -266,7 +266,7 @@ async function main(): Promise<void> {
           // Ohne Aufwertung geht es trotzdem nach Mealie - nur ohne den Komfort.
           const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
           console.log(`  ${nr} Aufwerten fehlgeschlagen (${msg}), übernehme ohne: ${k.titel}`);
-          if (/Kontingent ist aufgebraucht/.test(msg ?? "")) {
+          if (/Kontingent ist aufgebraucht|Limit erreicht/.test(msg ?? "")) {
             kontingentWeg = true;
             console.log(`  Gemini-Kontingent für heute aufgebraucht - ab hier ohne Aufwerten.`);
           }

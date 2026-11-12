@@ -71,12 +71,12 @@ const ConfigSchema = z.object({
 
   geminiApiKey: z.string().default(""),
   /**
-   * Eigener Key nur fuer Titelbilder. Bildmodelle gibt es nicht im kostenlosen
-   * Kontingent - so kann ein Projekt mit Abrechnung die Bilder uebernehmen,
-   * waehrend die Rezepte weiter ueber den kostenlosen Key laufen. Leer = der
-   * Haupt-Key macht beides.
+   * Key aus einem zweiten Google-Projekt MIT Abrechnung. Ist das kostenlose
+   * Kontingent von GEMINI_API_KEY erschoepft, laeuft es hierueber weiter -
+   * Rezepte, Aufwerten, Wochenplan. Titelbilder immer, denn fuer Bildmodelle
+   * hat das kostenlose Kontingent nichts. Leer = nur der kostenlose Key.
    */
-  imageApiKey: z.string().default(""),
+  geminiPaidApiKey: z.string().default(""),
   // Feste Versionen statt "-latest": Letztere zeigen laut Google auf
   // experimentelle Modelle mit engeren Limits und ohne zugesicherte
   // Verfuegbarkeit - genau das fuehrt zu sporadischen 503ern.
@@ -226,7 +226,7 @@ export function getConfig(): Config {
     mealieShoppingList: process.env.MEALIE_SHOPPING_LIST,
     staples: process.env.STAPLES,
     geminiApiKey: process.env.GEMINI_API_KEY,
-    imageApiKey: process.env.IMAGE_API_KEY,
+    geminiPaidApiKey: process.env.GEMINI_PAID_API_KEY,
     geminiModel: process.env.GEMINI_MODEL,
     geminiFallbackModel: process.env.GEMINI_FALLBACK_MODEL,
     geminiTranscribeModel: process.env.GEMINI_TRANSCRIBE_MODEL,

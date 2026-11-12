@@ -1,33 +1,49 @@
 import { GoogleGenAI } from "@google/genai";
 import { getConfig } from "../config.ts";
 
-let client: GoogleGenAI | undefined;
+export type KeyArt = "frei" | "bezahlt";
 
-export function getGemini(): GoogleGenAI {
+const clients = new Map<KeyArt, GoogleGenAI>();
+
+/**
+ * "frei" = GEMINI_API_KEY (kostenloses Kontingent), "bezahlt" =
+ * GEMINI_PAID_API_KEY (Projekt mit Abrechnung). Ohne bezahlten Key ist es
+ * immer der freie.
+ */
+export function getGemini(art: KeyArt = "frei"): GoogleGenAI {
   const cfg = getConfig();
-  if (!cfg.geminiApiKey) {
+  const key = art === "bezahlt" && cfg.geminiPaidApiKey ? cfg.geminiPaidApiKey : cfg.geminiApiKey;
+  if (!key) {
     throw new Error(
       "GEMINI_API_KEY fehlt. Kostenlos unter aistudio.google.com -> 'Get API key'. " +
         "Siehe .env.example.",
     );
   }
-  if (!client) client = new GoogleGenAI({ apiKey: cfg.geminiApiKey });
-  return client;
+  const art2: KeyArt = key === cfg.geminiApiKey ? "frei" : "bezahlt";
+  let c = clients.get(art2);
+  if (!c) {
+    c = new GoogleGenAI({ apiKey: key });
+    clients.set(art2, c);
+  }
+  return c;
 }
 
-let imageClient: GoogleGenAI | undefined;
-
-/** Fuer Titelbilder: der eigene Bild-Key, wenn gesetzt, sonst der Haupt-Key. */
+/** Titelbilder: das kostenlose Kontingent hat fuer Bildmodelle nichts. */
 export function getImageClient(): GoogleGenAI {
-  const cfg = getConfig();
-  if (!cfg.imageApiKey) return getGemini();
-  if (!imageClient) imageClient = new GoogleGenAI({ apiKey: cfg.imageApiKey });
-  return imageClient;
+  return getGemini("bezahlt");
 }
+
+/**
+ * Bis wann der freie Key nach einem "Limit erreicht" ruht. Danach wird er
+ * wieder probiert: Ein Minutenlimit ist laengst vorbei, und ist es das
+ * Tageslimit, kostet die Probe nur einen sofort abgelehnten Aufruf.
+ */
+let freiRuhtBis = 0;
+const FREI_PAUSE_MS = 15 * 60 * 1000;
 
 export function resetGemini(): void {
-  client = undefined;
-  imageClient = undefined;
+  clients.clear();
+  freiRuhtBis = 0;
 }
 
 /** Ein Bild, so wie Gemini es entgegennimmt. */
@@ -72,13 +88,19 @@ function statusOf(err: unknown): number | undefined {
 }
 
 /** Uebersetzt die API-Fehler in etwas, das in der Web-App weiterhilft. */
-function explain(status: number | undefined, model: string, raw: string): string {
+function explain(
+  status: number | undefined,
+  model: string,
+  raw: string,
+  art: KeyArt = "frei",
+): string {
   switch (status) {
     case 429:
-      return (
-        "Das kostenlose Gemini-Kontingent ist aufgebraucht (1.500 Anfragen/Tag). " +
-        "Morgen geht es weiter, oder du hinterlegst einen bezahlten Key."
-      );
+      return art === "bezahlt"
+        ? "Gemini lehnt auch über den bezahlten Key ab (Limit erreicht). Prüfe in der " +
+            "Google-Cloud-Abrechnung von GEMINI_PAID_API_KEY Budget und Kontingente."
+        : "Das kostenlose Gemini-Kontingent ist aufgebraucht. Morgen geht es weiter, " +
+            "oder du hinterlegst GEMINI_PAID_API_KEY aus einem Projekt mit Abrechnung.";
     case 503:
       return (
         `Das Modell „${model}“ ist gerade überlastet. Das ist vorübergehend — ` +
@@ -103,6 +125,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Ein einzelner Anlauf gegen ein bestimmtes Modell. */
 async function callOnce(
+  client: GoogleGenAI,
   model: string,
   prompt: string,
   schema: unknown,
@@ -117,7 +140,7 @@ async function callOnce(
     { text: prompt },
   ];
 
-  const response = await getGemini().models.generateContent({
+  const response = await client.models.generateContent({
     model,
     contents: [{ role: "user", parts }],
     config: {
@@ -156,46 +179,78 @@ export async function generateJson({
     (m, i, all): m is string => Boolean(m) && all.indexOf(m) === i,
   );
 
+  // Erst der kostenlose Key, dann - falls hinterlegt - der bezahlte. Ruht der
+  // kostenlose gerade, direkt der bezahlte.
+  const bezahltDa = Boolean(cfg.geminiPaidApiKey);
+  const keys: KeyArt[] = !bezahltDa
+    ? ["frei"]
+    : Date.now() < freiRuhtBis
+      ? ["bezahlt"]
+      : ["frei", "bezahlt"];
+
   // Getrennt festhalten: Scheitert das Ausweichmodell, weil es zurueckgezogen
   // wurde, darf dessen 404 nicht die eigentliche Ursache verdecken. Genau das
   // passierte, als Google seine 2.5er-Reihe abschaltete - gemeldet wurde
   // "Modell gibt es nicht", gemeint war die Ueberlastung des Hauptmodells.
   let primaryError: unknown;
   let fallbackError: unknown;
+  let letzteArt: KeyArt = keys[0]!;
 
-  for (const [modelIndex, model] of models.entries()) {
-    const istHaupt = modelIndex === 0;
-    const attempts = istHaupt ? maxAttempts : 1;
+  for (const art of keys) {
+    letzteArt = art;
+    primaryError = undefined;
+    fallbackError = undefined;
+    // Beim freien Key mit bezahltem dahinter: "Limit erreicht" heisst sofort
+    // wechseln. Abwarten lohnt nicht, es kostet nur Zeit.
+    const wechselMoeglich = art === "frei" && keys.includes("bezahlt");
+    let wechseln = false;
 
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      try {
-        return await callOnce(model, prompt, schema, images);
-      } catch (err) {
-        if (istHaupt) primaryError = err;
-        else fallbackError = err;
+    modelle: for (const [modelIndex, model] of models.entries()) {
+      const istHaupt = modelIndex === 0;
+      const attempts = istHaupt ? maxAttempts : 1;
 
-        const status = statusOf(err);
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+          return await callOnce(getGemini(art), model, prompt, schema, images);
+        } catch (err) {
+          if (istHaupt) primaryError = err;
+          else fallbackError = err;
 
-        // Bei einem Fehler, der sich nicht von allein loest (falscher Key, falsches
-        // Modell), waere jede Wiederholung nur verlorene Zeit.
-        if (status !== undefined && !RETRYABLE.includes(status)) break;
-        if (attempt === attempts) break;
+          const status = statusOf(err);
 
-        const waitMs = (BACKOFF_SECONDS[attempt - 1] ?? 40) * 1000;
-        console.warn(
-          `[gemini] ${model}: Versuch ${attempt}/${attempts} fehlgeschlagen` +
-            `${status ? ` (HTTP ${status})` : ""}, neuer Versuch in ${waitMs / 1000}s`,
-        );
-        await sleep(waitMs);
+          if (status === 429 && wechselMoeglich) {
+            freiRuhtBis = Date.now() + FREI_PAUSE_MS;
+            wechseln = true;
+            break modelle;
+          }
+
+          // Bei einem Fehler, der sich nicht von allein loest (falscher Key, falsches
+          // Modell), waere jede Wiederholung nur verlorene Zeit.
+          if (status !== undefined && !RETRYABLE.includes(status)) break;
+          if (attempt === attempts) break;
+
+          const waitMs = (BACKOFF_SECONDS[attempt - 1] ?? 40) * 1000;
+          console.warn(
+            `[gemini] ${model}: Versuch ${attempt}/${attempts} fehlgeschlagen` +
+              `${status ? ` (HTTP ${status})` : ""}, neuer Versuch in ${waitMs / 1000}s`,
+          );
+          await sleep(waitMs);
+        }
       }
+
+      const naechstes = models[modelIndex + 1];
+      if (naechstes) console.warn(`[gemini] wechsle auf Ausweichmodell ${naechstes}`);
     }
 
-    const naechstes = models[modelIndex + 1];
-    if (naechstes) console.warn(`[gemini] wechsle auf Ausweichmodell ${naechstes}`);
+    if (!wechseln) break;
+    console.warn(
+      "[gemini] kostenloses Kontingent erschöpft - weiter über den bezahlten Key " +
+        `(kostenloser ruht ${FREI_PAUSE_MS / 60000} Minuten).`,
+    );
   }
 
   throw new Error(
-    describeFailure(haupt, primaryError, cfg.geminiFallbackModel, fallbackError),
+    describeFailure(haupt, primaryError, cfg.geminiFallbackModel, fallbackError, letzteArt),
   );
 }
 
@@ -210,9 +265,10 @@ export function describeFailure(
   primaryError: unknown,
   fallbackModel: string,
   fallbackError: unknown,
+  art: KeyArt = "frei",
 ): string {
   const rawPrimary = primaryError instanceof Error ? primaryError.message : String(primaryError);
-  const haupt = explain(statusOf(primaryError), model, rawPrimary);
+  const haupt = explain(statusOf(primaryError), model, rawPrimary, art);
 
   if (fallbackError === undefined) return haupt;
 

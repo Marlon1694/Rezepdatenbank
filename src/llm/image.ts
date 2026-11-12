@@ -101,7 +101,7 @@ export function coverImageBlocker(): string {
   const cfg = getConfig();
   if (!coverWants(cfg.coverSource).ai) return `COVER_SOURCE steht auf "${cfg.coverSource}"`;
   if (!cfg.imageModel) return "IMAGE_MODEL ist nicht gesetzt";
-  if (!cfg.geminiApiKey && !cfg.imageApiKey) return "weder GEMINI_API_KEY noch IMAGE_API_KEY gesetzt";
+  if (!cfg.geminiApiKey && !cfg.geminiPaidApiKey) return "weder GEMINI_API_KEY noch GEMINI_PAID_API_KEY gesetzt";
   return "";
 }
 

@@ -45,9 +45,9 @@ async function main(): Promise<void> {
   const textModels = usable.filter((n) => !/(imagen|image|banana)/i.test(n));
   // Imagen arbeitet ueber "predict", nicht "generateContent" - ein Filter nur
   // auf generateContent liesse ausgerechnet das guenstigste Bildmodell weg.
-  // Mit eigenem Bild-Key zaehlt, was dieser Key darf.
-  const bildListe = cfg.imageApiKey
-    ? await modelsFor(cfg.imageApiKey, "IMAGE_API_KEY")
+  // Bilder laufen ueber den bezahlten Key - es zaehlt, was der darf.
+  const bildListe = cfg.geminiPaidApiKey
+    ? await modelsFor(cfg.geminiPaidApiKey, "GEMINI_PAID_API_KEY")
     : data.models;
   const imageModels = bildListe
     .filter((m) =>
@@ -79,7 +79,7 @@ async function main(): Promise<void> {
 
   if (imageModels.length) {
     console.log(
-      `\n  Bildmodelle (für IMAGE_MODEL)${cfg.imageApiKey ? " - über IMAGE_API_KEY" : ""}`,
+      `\n  Bildmodelle (für IMAGE_MODEL)${cfg.geminiPaidApiKey ? " - über GEMINI_PAID_API_KEY" : ""}`,
     );
     console.log("  " + "-".repeat(60));
     for (const n of imageModels) console.log(`  ${n}`);
