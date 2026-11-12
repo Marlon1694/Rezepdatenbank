@@ -15,8 +15,19 @@ export function getGemini(): GoogleGenAI {
   return client;
 }
 
+let imageClient: GoogleGenAI | undefined;
+
+/** Fuer Titelbilder: der eigene Bild-Key, wenn gesetzt, sonst der Haupt-Key. */
+export function getImageClient(): GoogleGenAI {
+  const cfg = getConfig();
+  if (!cfg.imageApiKey) return getGemini();
+  if (!imageClient) imageClient = new GoogleGenAI({ apiKey: cfg.imageApiKey });
+  return imageClient;
+}
+
 export function resetGemini(): void {
   client = undefined;
+  imageClient = undefined;
 }
 
 /** Ein Bild, so wie Gemini es entgegennimmt. */
