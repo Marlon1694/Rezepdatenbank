@@ -244,12 +244,15 @@ async function main(): Promise<void> {
   let ok = 0;
   const fehler: string[] = [];
   const notionHinweise: string[] = [];
+  // Ist das Tageskontingent weg, scheitert jede weitere Anfrage genauso -
+  // nach je einer Minute Wartezeit. Dann ohne Aufwerten weiter.
+  let kontingentWeg = false;
   for (const [i, k] of kandidaten.entries()) {
     const nr = `[${i + 1}/${kandidaten.length}]`;
     try {
       let recipe = k.recipe;
       let aufgewertet = false;
-      if (k.aufwerten) {
+      if (k.aufwerten && !kontingentWeg) {
         try {
           recipe = await enrichRecipe(recipe);
           aufgewertet = true;
@@ -257,6 +260,10 @@ async function main(): Promise<void> {
           // Ohne Aufwertung geht es trotzdem nach Mealie - nur ohne den Komfort.
           const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
           console.log(`  ${nr} Aufwerten fehlgeschlagen (${msg}), übernehme ohne: ${k.titel}`);
+          if (/Kontingent ist aufgebraucht/.test(msg ?? "")) {
+            kontingentWeg = true;
+            console.log(`  Gemini-Kontingent für heute aufgebraucht - ab hier ohne Aufwerten.`);
+          }
         }
       }
 
@@ -324,6 +331,12 @@ async function main(): Promise<void> {
     for (const h of notionHinweise) console.log(`    – ${h}`);
   }
   console.log(`\n  Fertig: ${ok} übernommen, ${fehler.length} fehlgeschlagen.`);
+  if (kontingentWeg) {
+    console.log(
+      `  Nicht alle Rezepte sind aufgewertet. Morgen denselben Befehl noch einmal - ` +
+        `er wertet nur die fehlenden auf.`,
+    );
+  }
   if (fehler.length) {
     console.log(`  Ein zweiter Lauf versucht nur die fehlgeschlagenen erneut.\n`);
     process.exitCode = 1;
