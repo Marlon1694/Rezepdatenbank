@@ -10,13 +10,13 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon.svg">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<title>Rezepte → Notion</title>
+<title>Rezepte</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <header class="top">
-  <h1>🍲 Rezepte → Notion</h1>
+  <h1>🍲 Rezepte</h1>
   <button id="settingsBtn" class="icon-btn" title="Einstellungen" aria-label="Einstellungen">⚙︎</button>
 </header>
 
@@ -41,6 +41,27 @@
     <button id="submitBtn" class="primary">Rezept erfassen</button>
     <p id="submitMsg" class="msg" hidden></p>
     <p class="muted small">YouTube, Instagram, TikTok, Food-Blogs — alles was einen Link hat.</p>
+  </section>
+
+  <!-- Diktat -->
+  <section id="diktatCard" class="card" hidden>
+    <h2 class="card-title">🎙️ Rezept diktieren</h2>
+    <textarea id="diktatText" rows="4"
+      placeholder="Sprich oder tippe – z.B. „Mach mir was aus Kartoffeln und Schnitzel für vier Personen“ oder ein ganzes Rezept mit Mengen und Schritten."></textarea>
+    <p class="muted small" id="diktatTipp">
+      Tipp: Auf der iPhone-Tastatur das <strong>Mikrofon</strong> antippen und lossprechen.
+    </p>
+    <button id="diktatSubmit" class="primary">Rezept erstellen</button>
+    <div class="row diktat-row">
+      <button id="diktatRecord" class="ghost wide" hidden>🎙️ Aufnehmen</button>
+      <button id="diktatUploadBtn" class="ghost wide">Sprachmemo hochladen</button>
+    </div>
+    <input id="diktatFile" type="file" accept="audio/*,.m4a,.mp3,.wav,.webm,.ogg,.caf" hidden>
+    <p id="diktatMsg" class="msg" hidden></p>
+    <p class="muted small">
+      Ein kurzer Wunsch wird zu einem ganzen Rezept, ein ausführliches Diktat wird
+      übernommen und nur ergänzt. Was die KI hinzufügt, ist im Rezept markiert.
+    </p>
   </section>
 
   <!-- Abfotografiertes Rezept -->
@@ -69,9 +90,19 @@
       nach abfotografieren und alles auf einmal hochladen.
     </p>
     <p class="muted small">
-      Zeigt ein Bild das fertige Gericht, wird es das Titelbild in Notion.
+      Zeigt ein Bild das fertige Gericht, wird es das Titelbild.
       Nach dem erfolgreichen Durchlauf werden die Fotos vom Server gelöscht.
     </p>
+  </section>
+
+  <!-- Küche: nur mit Mealie -->
+  <section id="kitchenCard" class="card" hidden>
+    <h2 class="card-title">🍽️ Küche</h2>
+    <div class="kitchen-buttons">
+      <button class="ghost" data-view="wochenplan">📅<span>Wochenplan</span></button>
+      <button class="ghost" data-view="einkauf">🛒<span>Einkauf</span></button>
+      <button class="ghost" data-view="kochen">🥕<span>Was kochen?</span></button>
+    </div>
   </section>
 
   <section id="listSection" hidden>
@@ -89,12 +120,15 @@
   <div class="sheet">
     <header class="sheet-head">
       <button id="closeDetail" class="ghost">← Zurück</button>
-      <a id="notionLink" class="ghost" target="_blank" rel="noopener" hidden>In Notion öffnen ↗</a>
+      <a id="notionLink" class="ghost" target="_blank" rel="noopener" hidden>Notion ↗</a>
+      <a id="mealieLink" class="ghost" target="_blank" rel="noopener" hidden>Mealie ↗</a>
     </header>
     <div id="detail" class="detail"></div>
   </div>
 </div>
 
 <script src="app.js"></script>
+<script src="kitchen.js"></script>
+<script src="diktat.js"></script>
 </body>
 </html>

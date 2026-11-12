@@ -14,8 +14,15 @@ import type { PhotoReading } from "../extract/photo.ts";
  */
 export type JobStatus = "draft" | "queued" | "running" | "done" | "failed";
 
-/** Woher das Rezept kommt: ein Link oder hochgeladene Fotos. */
-export type JobKind = "link" | "foto";
+/**
+ * Woher das Rezept kommt: ein Link, hochgeladene Fotos oder ein Diktat.
+ *
+ * Ein Diktat kommt als Text (Tastatur-Diktat, Siri-Kurzbefehl) oder als
+ * Audiodatei (Sprachmemo, Aufnahme in der App). Die Audiodatei liegt dann wie
+ * Fotos unter data/uploads/<id>/ und steht in `photos` - das Feld heisst aus
+ * historischen Gruenden so, gemeint ist "hochgeladene Dateien".
+ */
+export type JobKind = "link" | "foto" | "diktat";
 
 export interface Job {
   id: string;
@@ -51,6 +58,26 @@ export interface Job {
   notionPageId: string | null;
   notionPageUrl: string | null;
   notionUpdated: boolean;
+  mealieSlug: string | null;
+  mealieUrl: string | null;
+  /**
+   * Woher das Titelbild kam: die Adresse des Vorschaubilds oder - bei Fotos -
+   * der Dateiname des Bildes, das das Gericht zeigt. Damit bekommt ein Ziel,
+   * das erst im zweiten Anlauf erreicht wird, dasselbe Titelbild.
+   */
+  coverRef: string | null;
+  /**
+   * Der Hinweis oben auf der Seite, wenn die KI ergaenzt oder frei entwickelt
+   * hat. Gespeichert, damit er eine Korrektur in der Web-App uebersteht - die
+   * schreibt die Seite neu.
+   */
+  aiNotice: string | null;
+  /**
+   * Ziele, in die das Rezept NICHT geschrieben werden konnte, mit Grund. Leer,
+   * wenn alles geklappt hat. Der Job gilt trotzdem als fertig, sobald es
+   * mindestens ein Ziel erreicht hat - der Rest laesst sich nachholen.
+   */
+  targetErrors: Partial<Record<"notion" | "mealie", string>>;
   createdAt: string;
   updatedAt: string;
   durationMs: number | null;
@@ -75,6 +102,11 @@ interface Row {
   notion_page_id: string | null;
   notion_page_url: string | null;
   notion_updated: number;
+  mealie_slug: string | null;
+  mealie_url: string | null;
+  cover_ref: string | null;
+  ai_notice: string | null;
+  target_errors_json: string | null;
   created_at: string;
   updated_at: string;
   duration_ms: number | null;
@@ -109,6 +141,11 @@ function connect(): Database.Database {
       notion_page_id  TEXT,
       notion_page_url TEXT,
       notion_updated  INTEGER NOT NULL DEFAULT 0,
+      mealie_slug     TEXT,
+      mealie_url      TEXT,
+      cover_ref       TEXT,
+      ai_notice       TEXT,
+      target_errors_json TEXT,
       created_at      TEXT NOT NULL,
       updated_at      TEXT NOT NULL,
       duration_ms     INTEGER
@@ -117,7 +154,39 @@ function connect(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_jobs_status  ON jobs(status);
   `);
   migrate(db);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS approvals (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      start_date TEXT NOT NULL,
+      end_date   TEXT NOT NULL,
+      lines      INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
   return db;
+}
+
+/**
+ * Freigegebene Einkaeufe. Nur ein Protokoll - es verhindert nichts, aber die
+ * Web-App kann warnen, bevor dieselbe Woche ein zweites Mal in der
+ * Einkaufsliste landet.
+ */
+export function recordApproval(start: string, end: string, lines: number): void {
+  connect()
+    .prepare(`INSERT INTO approvals (start_date, end_date, lines, created_at) VALUES (?, ?, ?, ?)`)
+    .run(start, end, lines, new Date().toISOString());
+}
+
+export function approvalsOverlapping(
+  start: string,
+  end: string,
+): { start: string; end: string; lines: number; createdAt: string }[] {
+  return connect()
+    .prepare(
+      `SELECT start_date AS start, end_date AS end, lines, created_at AS createdAt
+       FROM approvals WHERE start_date <= ? AND end_date >= ? ORDER BY created_at DESC`,
+    )
+    .all(end, start) as { start: string; end: string; lines: number; createdAt: string }[];
 }
 
 /**
@@ -139,6 +208,11 @@ function migrate(handle: Database.Database): void {
     ["parent_id", `ALTER TABLE jobs ADD COLUMN parent_id TEXT`],
     ["reading_json", `ALTER TABLE jobs ADD COLUMN reading_json TEXT`],
     ["photos_deleted", `ALTER TABLE jobs ADD COLUMN photos_deleted INTEGER NOT NULL DEFAULT 0`],
+    ["mealie_slug", `ALTER TABLE jobs ADD COLUMN mealie_slug TEXT`],
+    ["mealie_url", `ALTER TABLE jobs ADD COLUMN mealie_url TEXT`],
+    ["cover_ref", `ALTER TABLE jobs ADD COLUMN cover_ref TEXT`],
+    ["ai_notice", `ALTER TABLE jobs ADD COLUMN ai_notice TEXT`],
+    ["target_errors_json", `ALTER TABLE jobs ADD COLUMN target_errors_json TEXT`],
   ];
   for (const [spalte, sql] of nachtraeglich) {
     if (!vorhanden.has(spalte)) {
@@ -169,6 +243,11 @@ function toJob(row: Row): Job {
     notionPageId: row.notion_page_id,
     notionPageUrl: row.notion_page_url,
     notionUpdated: row.notion_updated === 1,
+    mealieSlug: row.mealie_slug ?? null,
+    mealieUrl: row.mealie_url ?? null,
+    coverRef: row.cover_ref ?? null,
+    aiNotice: row.ai_notice ?? null,
+    targetErrors: row.target_errors_json ? JSON.parse(row.target_errors_json) : {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     durationMs: row.duration_ms,
@@ -186,6 +265,18 @@ export function createJob(url: string): Job {
  */
 export function createPhotoJob(): Job {
   return insert({ kind: "foto", url: "", photos: [], status: "draft" });
+}
+
+/** Ein Diktat als Text - sofort eingereiht. Der Text liegt im Transkript. */
+export function createDictationJob(text: string): Job {
+  const job = insert({ kind: "diktat", url: "", photos: [] });
+  updateJob(job.id, { transcript: text, textSource: "Diktat" });
+  return getJob(job.id)!;
+}
+
+/** Ein Diktat als Audiodatei - erst Entwurf, eingereiht wird mit queuePhotoJob(). */
+export function createAudioDraft(): Job {
+  return insert({ kind: "diktat", url: "", photos: [], status: "draft" });
 }
 
 function insert(opts: {
@@ -304,6 +395,11 @@ type Patch = Partial<{
   notionPageId: string | null;
   notionPageUrl: string | null;
   notionUpdated: boolean;
+  mealieSlug: string | null;
+  mealieUrl: string | null;
+  coverRef: string | null;
+  aiNotice: string | null;
+  targetErrors: Partial<Record<"notion" | "mealie", string>>;
   durationMs: number | null;
 }>;
 
@@ -322,6 +418,11 @@ const COLUMN: Record<keyof Patch, string> = {
   notionPageId: "notion_page_id",
   notionPageUrl: "notion_page_url",
   notionUpdated: "notion_updated",
+  mealieSlug: "mealie_slug",
+  mealieUrl: "mealie_url",
+  coverRef: "cover_ref",
+  aiNotice: "ai_notice",
+  targetErrors: "target_errors_json",
   durationMs: "duration_ms",
 };
 
@@ -333,6 +434,9 @@ export function updateJob(id: string, patch: Patch): void {
     sets.push(`${COLUMN[key]} = ?`);
     if (key === "recipe" || key === "reading" || key === "photos") {
       values.push(value ? JSON.stringify(value) : null);
+    } else if (key === "targetErrors") {
+      const leer = !value || Object.keys(value as object).length === 0;
+      values.push(leer ? null : JSON.stringify(value));
     } else if (key === "notionUpdated" || key === "photosDeleted") {
       values.push(value ? 1 : 0);
     } else values.push(value ?? null);

@@ -42,6 +42,8 @@ function showSetup(message) {
   $("setup").hidden = false;
   $("submit").hidden = true;
   $("photoCard").hidden = true;
+  $("kitchenCard").hidden = true;
+  $("diktatCard").hidden = true;
   $("listSection").hidden = true;
   const err = $("setupError");
   err.hidden = !message;
@@ -65,6 +67,10 @@ async function checkPhotoSupport() {
     const health = await res.json();
     $("photoCard").hidden = !health.fotos;
     if (health.maxPhotos) maxPhotos = health.maxPhotos;
+    // Wochenplan, Einkauf und "Was kochen?" laufen über Mealie.
+    if (typeof kitchenInit === "function") kitchenInit(health);
+    // Diktate brauchen Gemini - wie die Fotos.
+    $("diktatCard").hidden = !health.fotos;
   } catch {
     $("photoCard").hidden = true;
   }
@@ -312,6 +318,7 @@ $("refreshBtn").addEventListener("click", refresh);
 /* ── Verlauf ──────────────────────────────────────────────────────────────── */
 
 const STATUS_LABEL = { queued: "Wartet", running: "Läuft", done: "Fertig", failed: "Fehler" };
+const ZIEL = { notion: "Notion", mealie: "Mealie" };
 
 function relativeTime(iso) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -344,17 +351,22 @@ function renderJobs(jobs) {
     // entstanden sind - er hat selbst kein Rezept.
     const istStapel = job.textSource === "Stapel";
     const title =
-      job.recipeTitle || job.title || (istFoto ? `📷 ${job.photos.length} Foto(s)` : job.url);
+      job.recipeTitle ||
+      job.title ||
+      (istFoto ? `📷 ${job.photos.length} Foto(s)` : job.kind === "diktat" ? "🎙️ Diktat" : job.url);
     const meta = [];
     if (istStapel) meta.push("📚 Stapel");
     else if (job.parentId) meta.push("aus Stapel");
     else if (job.platform) meta.push(job.platform);
     else if (istFoto) meta.push("Foto");
+    else if (job.kind === "diktat") meta.push("Diktat");
     if (job.status === "running" && job.step) meta.push(job.step);
     if (job.status === "done") {
       if (job.textSource) meta.push(job.textSource);
       if (job.durationMs) meta.push(`${(job.durationMs / 1000).toFixed(0)} s`);
       if (job.notionUpdated) meta.push("aktualisiert");
+      const fehlt = Object.keys(job.targetErrors || {}).map((z) => ZIEL[z] || z);
+      if (fehlt.length) meta.push(`⚠️ fehlt in ${fehlt.join(", ")}`);
     }
     meta.push(relativeTime(job.createdAt));
 
@@ -473,11 +485,16 @@ async function openDetail(id) {
   const link = $("notionLink");
   link.hidden = !job.notionPageUrl;
   if (job.notionPageUrl) link.href = job.notionPageUrl;
+  const mLink = $("mealieLink");
+  mLink.hidden = !job.mealieUrl;
+  if (job.mealieUrl) mLink.href = job.mealieUrl;
 
   const head = document.createElement("div");
   // Ein Foto hat keine Adresse - dort wäre der Link nur ein toter Platzhalter.
   const herkunft =
-    job.kind === "foto"
+    job.kind === "diktat"
+      ? `<p class="muted small">🎙️ Eigenes Diktat</p>`
+      : job.kind === "foto"
       ? `<p class="muted small">📷 Eigenes Foto${
           job.photos.length > 1 ? ` · ${job.photos.length} Bilder` : ""
         }${job.parentId ? " · aus einem Stapel" : ""}</p>`
@@ -531,7 +548,21 @@ async function openDetail(id) {
     box.appendChild(galerie);
   }
 
-  if (job.recipe) box.appendChild(buildEditor(job));
+  if (job.recipe) {
+    let editor = buildEditor(job);
+    // Worauf die naechste Anweisung aufbaut: erst das gespeicherte Rezept,
+    // danach der letzte Vorschlag - so laesst er sich schrittweise verfeinern.
+    let basis = null;
+    if (job.status === "done") box.appendChild(buildReviser(job, () => basis, (vorschlag) => {
+      // Der Vorschlag ersetzt nur das Formular - gespeichert ist noch nichts.
+      basis = vorschlag;
+      const neu = buildEditor({ ...job, recipe: vorschlag }, { vorschlag: true });
+      editor.replaceWith(neu);
+      editor = neu;
+      (neu.querySelector(".vorschlag") || neu).scrollIntoView({ behavior: "smooth", block: "start" });
+    }));
+    box.appendChild(editor);
+  }
 
   const actions = document.createElement("div");
   actions.className = "actions";
@@ -558,6 +589,30 @@ async function openDetail(id) {
   // Ohne Bilder gibt es nichts zu wiederholen - der Server wiese den Versuch
   // ohnehin ab, und ein Knopf, der nur eine Fehlermeldung produziert, hilft
   // niemandem.
+  // Steht das Rezept nur in einem der Ziele, gezielt nachtragen - ohne neue
+  // KI-Anfrage und ohne das andere Ziel anzufassen.
+  const fehlend = Object.entries(job.targetErrors || {});
+  if (job.status === "done" && fehlend.length) {
+    const hinweis = document.createElement("p");
+    hinweis.className = "error";
+    hinweis.textContent = fehlend
+      .map(([z, g]) => `Nicht in ${ZIEL[z] || z} gespeichert: ${g}`)
+      .join("\n");
+    // Direkt unter den Titel, nicht unter den Editor - dort sähe ihn niemand.
+    head.after(hinweis);
+
+    const nach = document.createElement("button");
+    nach.textContent = `In ${fehlend.map(([z]) => ZIEL[z] || z).join(" und ")} nachtragen`;
+    nach.className = "primary";
+    nach.style.marginTop = "0";
+    wire(nach, async () => {
+      await api(`/api/jobs/${id}/retry`, { method: "POST" });
+      await openDetail(id);
+      refresh();
+    });
+    actions.appendChild(nach);
+  }
+
   if (job.status === "failed" && !(job.kind === "foto" && job.photosDeleted)) {
     const retry = document.createElement("button");
     retry.textContent = "Erneut versuchen";
@@ -604,10 +659,70 @@ async function openDetail(id) {
   document.body.style.overflow = "hidden";
 }
 
-/** Editierbares Rezept-Formular. Speichern schreibt die Notion-Seite neu. */
-function buildEditor(job) {
+/**
+ * "Mit KI überarbeiten": Anweisung tippen oder per Tastatur-Mikrofon sprechen,
+ * die KI liefert einen Vorschlag. Der erscheint im Editor - gespeichert wird
+ * erst dort.
+ */
+function buildReviser(job, getBasis, onVorschlag) {
+  const box = document.createElement("details");
+  box.className = "reviser";
+  box.innerHTML = `<summary>✨ Mit KI überarbeiten</summary>`;
+
+  const ta = textarea("", 2);
+  ta.placeholder = "z. B. schärfer · ohne Sahne · für 2 statt 4 Personen · vegetarisch";
+  ta.maxLength = 2000;
+
+  const los = document.createElement("button");
+  los.className = "primary";
+  los.textContent = "Vorschlag holen";
+
+  const msg = document.createElement("p");
+  msg.className = "msg";
+  msg.hidden = true;
+
+  los.addEventListener("click", async () => {
+    const anweisung = ta.value.trim();
+    if (!anweisung) {
+      ta.focus();
+      return;
+    }
+    los.disabled = true;
+    msg.hidden = false;
+    msg.className = "msg";
+    msg.textContent = "Die KI überarbeitet das Rezept …";
+    try {
+      const res = await api(`/api/jobs/${job.id}/revise`, {
+        method: "POST",
+        body: JSON.stringify({ anweisung, recipe: getBasis() || undefined }),
+      });
+      msg.hidden = true;
+      onVorschlag(res.recipe);
+    } catch (err) {
+      msg.className = "msg err";
+      msg.textContent = err.message;
+    } finally {
+      los.disabled = false;
+    }
+  });
+
+  box.append(field(ta), los, msg);
+  return box;
+}
+
+/** Editierbares Rezept-Formular. Speichern schreibt Mealie (und Notion) neu. */
+function buildEditor(job, { vorschlag = false } = {}) {
   const r = job.recipe;
   const wrap = document.createElement("div");
+
+  if (vorschlag) {
+    const hinweis = document.createElement("p");
+    hinweis.className = "msg vorschlag";
+    hinweis.textContent =
+      "✨ Vorschlag der KI – noch nicht gespeichert. Prüfen, bei Bedarf anpassen, " +
+      "dann speichern. Verwerfen: Fenster schließen.";
+    wrap.appendChild(hinweis);
+  }
 
   const titleRow = document.createElement("div");
   titleRow.className = "field row";
@@ -643,7 +758,10 @@ function buildEditor(job) {
       const zutat = input(e.zutat, "Zutat");
       row.append(menge, zutat);
       g.appendChild(row);
-      rows.push({ menge, zutat });
+      // Das Original merken: Bleibt die Zeile unverändert, geht ihre Zerlegung
+      // (Zahl, Einheit, Lebensmittel) unverändert mit. Wird sie geändert, passt
+      // die alte Zerlegung nicht mehr - dann lieber ohne als falsch.
+      rows.push({ menge, zutat, original: e });
     }
     ingBox.appendChild(g);
     groupEls.push({ name, rows });
@@ -669,7 +787,11 @@ function buildEditor(job) {
 
   const save = document.createElement("button");
   save.className = "primary";
-  save.textContent = job.notionPageUrl ? "Korrigieren & Notion aktualisieren" : "Nach Notion schreiben";
+  save.textContent = vorschlag
+    ? "Vorschlag speichern"
+    : job.notionPageUrl || job.mealieUrl
+      ? "Speichern & aktualisieren"
+      : "Speichern";
   const msg = document.createElement("p");
   msg.className = "msg";
   msg.hidden = true;
@@ -681,6 +803,9 @@ function buildEditor(job) {
     msg.textContent = "Wird gespeichert …";
 
     const payload = {
+      // Alles, was der Editor nicht anzeigt (Schwierigkeit, Grundzutaten …),
+      // unverändert mitschicken. Vorher fiel es bei jeder Korrektur still weg.
+      ...r,
       emoji: emojiEl.value.trim() || "🍽️",
       titel: titelEl.value.trim(),
       tags: tagsEl.value.split(",").map((t) => t.trim()).filter(Boolean),
@@ -691,10 +816,15 @@ function buildEditor(job) {
           gruppe: g.name.value.trim() || "Zutaten",
           eintraege: g.rows
             .filter((row) => row.zutat.value.trim())
-            .map((row) => ({
-              menge: row.menge.value.trim() || undefined,
-              zutat: row.zutat.value.trim(),
-            })),
+            .map((row) => {
+              const menge = row.menge.value.trim();
+              const zutat = row.zutat.value.trim();
+              const o = row.original || {};
+              const unverändert = menge === (o.menge || "") && zutat === o.zutat;
+              return unverändert
+                ? { ...o, menge: menge || undefined, zutat }
+                : { menge: menge || undefined, zutat };
+            }),
         }))
         .filter((g) => g.eintraege.length),
       schritte: stepEls.map((t) => t.value.trim()).filter(Boolean),
@@ -708,11 +838,20 @@ function buildEditor(job) {
         method: "PUT",
         body: JSON.stringify(payload),
       });
-      msg.className = "msg ok";
-      msg.textContent = res.updated ? "Notion-Seite aktualisiert." : "Nach Notion geschrieben.";
+      const fehler = Object.entries(res.errors || {});
+      msg.className = fehler.length ? "msg err" : "msg ok";
+      msg.textContent = fehler.length
+        ? `Gespeichert, aber nicht überall: ${fehler.map(([z, g]) => `${ZIEL[z] || z}: ${g}`).join(" · ")}`
+        : res.updated
+          ? "Gespeichert und aktualisiert."
+          : "Gespeichert.";
       if (res.pageUrl) {
         $("notionLink").href = res.pageUrl;
         $("notionLink").hidden = false;
+      }
+      if (res.mealieUrl) {
+        $("mealieLink").href = res.mealieUrl;
+        $("mealieLink").hidden = false;
       }
       refresh();
     } catch (err) {
@@ -742,6 +881,9 @@ function field(el) {
 
 function closeDetail() {
   releaseObjektUrls();
+  // Eine per Link geöffnete Küchen-Ansicht (#einkauf) soll beim Neuladen
+  // nicht wieder aufgehen.
+  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
   $("overlay").hidden = true;
   document.body.style.overflow = "";
   openJobId = null;

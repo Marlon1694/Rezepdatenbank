@@ -3,10 +3,48 @@ import { buildProperties, findProperty, type Mapping } from "./mapper.ts";
 import { buildRecipeBlocks, chunkBlocks } from "./blocks.ts";
 import type { Recipe } from "../llm/recipeSchema.ts";
 import { coverWants, getConfig } from "../config.ts";
-import { generateCoverImage } from "../llm/image.ts";
+import { generateCoverImage, type GeneratedImage } from "../llm/image.ts";
 import { uploadCover, fetchThumbnail, readLocalImage } from "./cover.ts";
 
+/**
+ * Beschafft das Titelbild - fuer jedes Ziel dasselbe.
+ *
+ * Das Vorschaubild geht vor: Es zeigt das Gericht aus genau diesem Rezept,
+ * kostet nichts und ist ohnehin schon zur Hand. Ein erzeugtes Bild zeigt
+ * dagegen ein plausibles, aber erfundenes Gericht - und die freie
+ * Gemini-Stufe sieht dafuer kein Kontingent vor.
+ */
+export async function resolveCover(
+  input: Pick<UpsertInput, "recipe" | "coverFile" | "thumbnailUrl">,
+): Promise<GeneratedImage | undefined> {
+  const cfg = getConfig();
+  if (cfg.coverSource === "none") return undefined;
+  const want = coverWants(cfg.coverSource);
+  let image: GeneratedImage | undefined;
+
+  // Ein eigenes Foto des Gerichts ist das beste Titelbild, das es geben kann:
+  // Es zeigt genau dieses Rezept, nicht eine Nachbildung davon.
+  if (want.thumbnail && input.coverFile) {
+    image = await readLocalImage(input.coverFile);
+  }
+  if (!image && want.thumbnail && input.thumbnailUrl) {
+    image = await fetchThumbnail(input.thumbnailUrl);
+  }
+  if (!image && want.ai) {
+    image = await generateCoverImage(input.recipe);
+  }
+  if (!image && want.thumbnail && !want.ai && !input.thumbnailUrl && !input.coverFile) {
+    console.log("[titelbild] die Quelle liefert kein Vorschaubild.");
+  }
+  return image;
+}
+
 export interface UpsertInput {
+  /**
+   * Bereits beschafftes Titelbild. null = bewusst keines; undefined = selbst
+   * beschaffen.
+   */
+  coverImage?: GeneratedImage | null;
   recipe: Recipe;
   /** Leer bei Fotos: Dort gibt es keine Adresse. */
   sourceUrl: string;
@@ -22,6 +60,7 @@ export interface UpsertInput {
   existingPageId?: string;
   /** Klartext-Herkunft fuer Fotos, z.B. "Eigenes Foto (2 Bilder)". */
   sourceLabel?: string;
+  sourceIcon?: string;
   /** Hinweis, wenn die KI ergaenzt hat. */
   aiNotice?: string;
   sourceTitle?: string;
@@ -116,6 +155,7 @@ export async function upsertRecipe(input: UpsertInput): Promise<UpsertResult> {
     sourceUrl: input.sourceUrl,
     sourceTitle: input.sourceTitle,
     sourceLabel: input.sourceLabel,
+    sourceIcon: input.sourceIcon,
     aiNotice: input.aiNotice,
     transcript: input.transcript,
     transcriptSource: input.transcriptSource,
@@ -130,24 +170,8 @@ export async function upsertRecipe(input: UpsertInput): Promise<UpsertResult> {
   // Gemini-Stufe sieht dafuer kein Kontingent vor.
   let coverId: string | undefined;
   if (!input.dryRun && cfg.coverSource !== "none") {
-    const want = coverWants(cfg.coverSource);
-    let image;
-
-    // Ein eigenes Foto des Gerichts ist das beste Titelbild, das es geben kann:
-    // Es zeigt genau dieses Rezept, nicht eine Nachbildung davon.
-    if (want.thumbnail && input.coverFile) {
-      image = await readLocalImage(input.coverFile);
-    }
-    if (!image && want.thumbnail && input.thumbnailUrl) {
-      image = await fetchThumbnail(input.thumbnailUrl);
-    }
-    if (!image && want.ai) {
-      image = await generateCoverImage(input.recipe);
-    }
-    if (!image && want.thumbnail && !want.ai && !input.thumbnailUrl && !input.coverFile) {
-      console.log("[titelbild] die Quelle liefert kein Vorschaubild.");
-    }
-
+    // Schon beschafft (etwa fuer Notion UND Mealie): nicht noch einmal laden.
+    const image = input.coverImage !== undefined ? input.coverImage : await resolveCover(input);
     if (image) coverId = await uploadCover(image);
   }
   const cover = coverId

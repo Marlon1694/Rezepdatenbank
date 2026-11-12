@@ -16,21 +16,24 @@ interface ModelEntry {
   supportedGenerationMethods?: string[];
 }
 
+async function modelsFor(key: string, name: string): Promise<ModelEntry[]> {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models?key=${key}&pageSize=200`,
+  );
+  if (!res.ok) {
+    throw new Error(`Abfrage fehlgeschlagen (HTTP ${res.status}). Stimmt ${name}?`);
+  }
+  return ((await res.json()) as { models?: ModelEntry[] }).models ?? [];
+}
+
 async function main(): Promise<void> {
   const cfg = getConfig();
   if (!cfg.geminiApiKey) {
     throw new Error("GEMINI_API_KEY fehlt in der .env.");
   }
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models?key=${cfg.geminiApiKey}&pageSize=200`,
-  );
-  if (!res.ok) {
-    throw new Error(`Abfrage fehlgeschlagen (HTTP ${res.status}). Stimmt der API-Key?`);
-  }
-
-  const data = (await res.json()) as { models?: ModelEntry[] };
-  const usable = (data.models ?? [])
+  const data = { models: await modelsFor(cfg.geminiApiKey, "GEMINI_API_KEY") };
+  const usable = data.models
     .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
     .map((m) => m.name.replace(/^models\//, ""))
     // Einbettungs- und Video-/Musikmodelle taugen fuer keinen unserer Schritte.
@@ -39,8 +42,20 @@ async function main(): Promise<void> {
 
   // Bildmodelle getrennt ausweisen: sie kommen fuer ein Titelbild in Frage,
   // nicht fuer die Rezept-Extraktion.
-  const imageModels = usable.filter((n) => /(imagen|image|banana)/i.test(n));
-  const textModels = usable.filter((n) => !imageModels.includes(n));
+  const textModels = usable.filter((n) => !/(imagen|image|banana)/i.test(n));
+  // Imagen arbeitet ueber "predict", nicht "generateContent" - ein Filter nur
+  // auf generateContent liesse ausgerechnet das guenstigste Bildmodell weg.
+  // Bilder laufen ueber den bezahlten Key - es zaehlt, was der darf.
+  const bildListe = cfg.geminiPaidApiKey
+    ? await modelsFor(cfg.geminiPaidApiKey, "GEMINI_PAID_API_KEY")
+    : data.models;
+  const imageModels = bildListe
+    .filter((m) =>
+      m.supportedGenerationMethods?.some((g) => g === "predict" || g === "generateContent"),
+    )
+    .map((m) => m.name.replace(/^models\//, ""))
+    .filter((n) => /(imagen|image|banana)/i.test(n))
+    .sort();
 
   // "-latest" zeigt laut Google auf experimentelle Modelle mit engeren Limits -
   // fuer den Dauerbetrieb ist eine feste Version die ruhigere Wahl.
@@ -63,7 +78,9 @@ async function main(): Promise<void> {
   }
 
   if (imageModels.length) {
-    console.log(`\n  Bildmodelle (für ein Titelbild)`);
+    console.log(
+      `\n  Bildmodelle (für IMAGE_MODEL)${cfg.geminiPaidApiKey ? " - über GEMINI_PAID_API_KEY" : ""}`,
+    );
     console.log("  " + "-".repeat(60));
     for (const n of imageModels) console.log(`  ${n}`);
   } else {

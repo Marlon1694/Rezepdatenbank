@@ -192,6 +192,73 @@ Tracking gilt — dort kann ein Parameter wie `?seite=2` inhaltlich wichtig sein
 > Voraussetzung ist eine Spalte für die Quelle (bei dir `URL`). Ohne sie kann derselbe
 > Link nicht wiedererkannt werden und jeder Lauf legt eine neue Seite an.
 
+## Rezept diktieren
+
+Sprechen statt tippen — in der Web-App unter **🎙️ Rezept diktieren** oder per Siri
+(**„Hey Siri, Rezept diktieren"**, Einrichtung in [`docs/ios-shortcut.md`](docs/ios-shortcut.md)).
+
+- Ein **kurzer Wunsch** („mach mir was aus Kartoffeln und Schnitzel für vier") wird
+  zu einem ganzen Rezept. Oben auf der Seite steht dann, dass es frei entwickelt ist.
+- Ein **ausführliches Diktat** mit Mengen und Schritten wird übernommen und nur in
+  den Lücken ergänzt — jede Ergänzung ist mit „(ergänzt)" markiert.
+- Füllwörter, Versprecher und Selbstkorrekturen („nee, doch lieber 300 Gramm")
+  bereinigt die KI.
+
+| Weg | Braucht HTTPS? |
+|---|---|
+| Textfeld + **Mikrofon auf der iPhone-Tastatur** | nein |
+| Siri-Kurzbefehl „Text diktieren" | nein |
+| **Sprachmemo hochladen** — schreibt der Server mit Whisper ab | nein |
+| **Aufnehmen** direkt in der Web-App | ja — Browser geben das Mikrofon nur über HTTPS frei (Tailscale). Über `http://` blendet die App den Knopf aus. |
+
+Die Audiodatei wird nach dem Abschreiben gelöscht; der Text bleibt im Verlauf, und
+„Erneut versuchen" braucht nur ihn.
+
+## Mealie
+
+Zusätzlich oder statt Notion schreibt die App jedes Rezept nach
+[Mealie](https://mealie.io) — mit Wochenplan, Einkaufsliste, Kochmodus und über
+[Mealie Atelier](https://github.com/mealie-atelier/mealie-atelier-cards) auch ins
+Home-Assistant-Dashboard und nach Bring!. **Einrichtung Schritt für Schritt:
+[`docs/mealie.md`](docs/mealie.md).**
+
+Zwei Zeilen in der `.env` schalten es ein:
+
+```
+MEALIE_URL=http://192.168.2.227:9925
+MEALIE_API_TOKEN=…
+```
+
+| | Wie es nach Mealie kommt |
+|---|---|
+| Zutaten | **zerlegt** in Menge, Einheit und Lebensmittel — das macht Gemini gleich beim Erstellen. Nur so fasst Mealies Einkaufsliste „200 g Mehl" und „100 g Mehl" zu einer Zeile zusammen, und nur so klappt die Portionsumrechnung. Fehlende Lebensmittel und Einheiten legt die App in Mealie an. |
+| Gruppen („Für den Teig") | Überschrift am ersten Eintrag der Gruppe |
+| Schritte | mit den Zutaten verknüpft, die sie verwenden — Mealies Kochmodus zeigt sie samt Menge neben dem Schritt und rechnet beim Ändern der Portionen mit. In Notion steht dieselbe Angabe grau unter dem Schritt („↳ 200 g Mehl · 2 Eier“). |
+| Tags | fehlende werden angelegt — Mealie würde sie sonst stillschweigend verwerfen |
+| Küche | Kategorie |
+| Pro-Tipp, KI-Hinweis | Notizen |
+| Status „Ausprobieren" | Tag, nur beim Anlegen. Entfernst du ihn in Mealie, kommt er bei einem erneuten Import nicht zurück. |
+| Eigene Tags in Mealie | bleiben bei einem erneuten Import erhalten |
+| Titelbild | dasselbe wie in Notion, nur einmal abgerufen |
+
+**Notion und Mealie sind unabhängig.** Fällt eines aus, landet das Rezept trotzdem
+im anderen. Der Verlauf zeigt dann „⚠️ fehlt in Mealie", und **In Mealie
+nachtragen** schreibt das fertige Rezept dorthin — ohne neue KI-Anfrage und ohne
+das andere Ziel anzufassen.
+
+Mit Mealie kommt in der Web-App eine Karte **🍽️ Küche** dazu:
+
+- **Wochenplan** — die KI plant aus deinen Rezepten und meidet, was zuletzt dran war; erst „Übernehmen" schreibt in Mealie
+- **Einkauf** — alle Zutaten der Woche zusammengefasst, Vorrätiges abgewählt; erst „Freigeben" schreibt in die Einkaufsliste, von der Atelier nach Bring! synchronisiert
+- **Was kochen?** — passende Rezepte zu dem, was da ist
+
+Direkt verlinkbar als `…/#wochenplan`, `…/#einkauf`, `…/#kochen` — etwa aus einer
+Home-Assistant-Benachrichtigung am Sonntag (Beispiel in `docs/mealie.md`).
+
+Den Bestand übernimmt `npm run migrate:mealie` (erst Probelauf, dann mit
+`-- --ausfuehren`). Mit `NOTION_ENABLED=false` geht später alles nur noch nach
+Mealie.
+
 ## Abfotografierte Rezepte
 
 Kochbuchseite, Zeitschrift, handschriftliche Karte, Bildschirmfoto — in der Web-App
@@ -428,6 +495,11 @@ Alles über die `.env`, Vorlage in [`.env.example`](.env.example). Die wichtigst
 | `GEMINI_MODEL` | `gemini-3.5-flash` | Modell für die Rezept-Extraktion |
 | `GEMINI_FALLBACK_MODEL` | `gemini-3.6-flash` | Ausweichmodell bei Überlastung |
 | `GEMINI_TRANSCRIBE_MODEL` | `gemini-3.5-transcribe` | nur bei `TRANSCRIBE_PROVIDER=gemini` |
+| `MEALIE_URL` | *(leer)* | Adresse von Mealie mit Port, z.B. `http://192.168.2.227:9925` — nicht `localhost` |
+| `MEALIE_API_TOKEN` | *(leer)* | API-Token aus Mealie (Profil → API-Token) |
+| `MEALIE_SHOPPING_LIST` | `Wocheneinkauf` | Mealie-Liste für freigegebene Zutaten — die Quelle der Bring!-Regel |
+| `STAPLES` | `Salz,Pfeffer,…` | Grundausstattung, beim Einkauf vorab abgewählt (nur Zutaten ohne Lebensmittel-Zuordnung) |
+| `NOTION_ENABLED` | `true` | `false` = nur noch Mealie; Notion-Token und -ID sind dann nicht mehr nötig |
 | `COVER_SOURCE` | `thumbnail` | `thumbnail`, `ai`, `thumbnail+ai` oder `none` |
 | `MAX_PHOTOS_PER_JOB` | `60` | wie viele Bilder auf einmal hochgeladen werden dürfen |
 | `VISION_CHUNK_SIZE` | `4` | wie viele Bilder pro Leseanfrage ans Modell gehen |
@@ -461,8 +533,11 @@ src/
   transcribe/        faster-whisper (lokal) | Gemini
   llm/               Prompt-Aufbau, Gemini, Rezept-Schema
   notion/            Client, Spalten-Zuordnung, Blöcke, Upsert
+  mealie/            Client, Zuordnung, Anlegen/Aktualisieren, Wochenplan, Einkauf
+  targets.ts         schreibt in Notion und/oder Mealie, unabhängig voneinander
+  migrate/           Notion-Seiten zurücklesen (für die Übernahme)
   jobs/              SQLite-Queue, Worker, Pipeline, Foto-Ablage
-  web/               PWA ohne Build-Schritt
+  web/               PWA ohne Build-Schritt (app.js, kitchen.js)
 prompts/recipe.de.md ► dein Prompt
 config/              notion-mapping.json, cookies.txt, ts-serve.json
 ```

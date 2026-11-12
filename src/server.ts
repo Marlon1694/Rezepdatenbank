@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyReply } from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyMultipart from "@fastify/multipart";
 import { createReadStream } from "node:fs";
@@ -9,14 +9,19 @@ import { getConfig } from "./config.ts";
 import {
   createJob,
   createPhotoJob,
+  createDictationJob,
+  createAudioDraft,
   queuePhotoJob,
   getJob,
   listJobs,
   deleteJob,
   updateJob,
   childrenOf,
+  recordApproval,
+  approvalsOverlapping,
 } from "./jobs/store.ts";
 import {
+  checkAudio,
   checkPhoto,
   savePhoto,
   removePhotos,
@@ -26,9 +31,24 @@ import {
 } from "./jobs/uploads.ts";
 import { mimeForFile } from "./lib/images.ts";
 import { startWorker, nudgeWorker } from "./jobs/worker.ts";
-import { upsertRecipe } from "./notion/upsert.ts";
+import { republish } from "./jobs/republish.ts";
+import { activeTargets, type Target } from "./targets.ts";
+import { mealieEnabled, mealieSelf } from "./mealie/client.ts";
+import {
+  shoppingPreview,
+  approveShopping,
+  suggestPlan,
+  alternative,
+  applyPlan,
+  cookSuggestions,
+  today,
+  ENTRY_TYPES,
+  type EntryType,
+} from "./mealie/kitchen.ts";
+import { addDays } from "./mealie/planner.ts";
 import { getDataSourceSchema } from "./notion/client.ts";
 import { loadMapping } from "./jobs/mapping.ts";
+import { reviseRecipe } from "./llm/revise.ts";
 import { RecipeSchema } from "./llm/recipeSchema.ts";
 import * as ytdlp from "./extract/ytdlp.ts";
 import { detectPlatform } from "./extract/index.ts";
@@ -131,10 +151,137 @@ export async function buildApp() {
     // Damit sichtbar ist, ob sich auf der Platte etwas ansammelt.
     uploads: await uploadsSize(),
     photoRetentionDays: cfg.photoRetentionDays,
+    // Wohin Rezepte geschrieben werden. Ob die Verbindung steht, zeigt
+    // /api/mealie bzw. /api/notion - hier bleibt es ohne Netzanfrage.
+    targets: activeTargets(),
   }));
+
+  /* ── Kueche: Wochenplan, Einkauf, Was kann ich kochen ─────────────────── */
+
+  const DATUM = /^\d{4}-\d{2}-\d{2}$/;
+  /** Gemeinsame Pruefung: Mealie da, Zeitraum gueltig. */
+  function zeitraum(q: Record<string, unknown>, reply: FastifyReply) {
+    if (!mealieEnabled()) {
+      reply.code(404).send({ error: "Dafür muss Mealie eingerichtet sein (MEALIE_URL, MEALIE_API_TOKEN)." });
+      return undefined;
+    }
+    const start = typeof q.start === "string" && DATUM.test(q.start) ? q.start : today();
+    const days = Math.min(Math.max(Number(q.days) || 7, 1), 14);
+    const typ = ENTRY_TYPES.includes(q.type as EntryType) ? (q.type as EntryType) : "dinner";
+    return { start, days, typ, end: addDays(start, days - 1) };
+  }
+  const fehler = (reply: FastifyReply, err: unknown) =>
+    reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+
+  app.get("/api/kitchen/shopping", async (request, reply) => {
+    const z = zeitraum(request.query as Record<string, unknown>, reply);
+    if (!z) return;
+    try {
+      const preview = await shoppingPreview(z.start, z.days);
+      return { ...preview, approvals: approvalsOverlapping(z.start, z.end) };
+    } catch (err) {
+      return fehler(reply, err);
+    }
+  });
+
+  app.post("/api/kitchen/shopping", async (request, reply) => {
+    const body = (request.body ?? {}) as { start?: string; days?: number; keys?: unknown };
+    const z = zeitraum(body as Record<string, unknown>, reply);
+    if (!z) return;
+    if (!Array.isArray(body.keys) || !body.keys.every((k) => typeof k === "string")) {
+      return reply.code(400).send({ error: "Es fehlt die Auswahl der Zutaten." });
+    }
+    try {
+      const r = await approveShopping(z.start, z.days, body.keys as string[]);
+      recordApproval(z.start, z.end, r.lines);
+      return r;
+    } catch (err) {
+      return fehler(reply, err);
+    }
+  });
+
+  app.post("/api/kitchen/plan/suggest", async (request, reply) => {
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const z = zeitraum(body, reply);
+    if (!z) return;
+    try {
+      return await suggestPlan(z.start, z.days, z.typ, typeof body.wishes === "string" ? body.wishes : "");
+    } catch (err) {
+      return fehler(reply, err);
+    }
+  });
+
+  app.post("/api/kitchen/plan/alternative", async (request, reply) => {
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const z = zeitraum(body, reply);
+    if (!z) return;
+    const exclude = Array.isArray(body.exclude) ? body.exclude.filter((x) => typeof x === "string") : [];
+    try {
+      const alt = await alternative(z.start, z.days, z.typ, exclude as string[]);
+      if (!alt) return reply.code(404).send({ error: "Keine weiteren Rezepte zur Auswahl." });
+      return alt;
+    } catch (err) {
+      return fehler(reply, err);
+    }
+  });
+
+  app.post("/api/kitchen/plan/apply", async (request, reply) => {
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const z = zeitraum(body, reply);
+    if (!z) return;
+    const entries = Array.isArray(body.entries)
+      ? (body.entries as { date?: unknown; recipeId?: unknown }[]).filter(
+          (e): e is { date: string; recipeId: string } =>
+            typeof e.date === "string" && DATUM.test(e.date) && typeof e.recipeId === "string",
+        )
+      : [];
+    if (!entries.length) return reply.code(400).send({ error: "Der Plan ist leer." });
+    try {
+      return { added: await applyPlan(entries, z.typ) };
+    } catch (err) {
+      return fehler(reply, err);
+    }
+  });
+
+  app.get("/api/kitchen/cook", async (request, reply) => {
+    if (!mealieEnabled()) {
+      return reply.code(404).send({ error: "Dafür muss Mealie eingerichtet sein." });
+    }
+    const q = request.query as { have?: string; missing?: string };
+    if (!q.have?.trim()) return reply.code(400).send({ error: "Was ist denn da?" });
+    try {
+      return await cookSuggestions(q.have, Math.min(Math.max(Number(q.missing) || 3, 0), 10));
+    } catch (err) {
+      return fehler(reply, err);
+    }
+  });
+
+  /** Prueft die Mealie-Verbindung: Adresse erreichbar, Token gueltig, wessen Konto. */
+  app.get("/api/mealie", async (_request, reply) => {
+    if (!mealieEnabled()) {
+      return reply.code(404).send({
+        error: "Mealie ist nicht eingerichtet. MEALIE_URL und MEALIE_API_TOKEN in der .env setzen.",
+      });
+    }
+    try {
+      const self = await mealieSelf();
+      return {
+        ok: true,
+        url: cfg.mealieUrl,
+        user: self.username ?? self.email,
+        group: self.groupSlug,
+        household: self.household,
+      };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
 
   /** Prueft die Notion-Verbindung und zeigt das erkannte Schema. */
   app.get("/api/notion", async (_request, reply) => {
+    if (!cfg.notionEnabled) {
+      return reply.code(404).send({ error: "Notion ist abgeschaltet (NOTION_ENABLED=false)." });
+    }
     try {
       const [schema, mapping] = await Promise.all([getDataSourceSchema(), loadMapping()]);
       return {
@@ -169,6 +316,73 @@ export async function buildApp() {
       platform: detectPlatform(url),
       message: "Eingereiht. Status unter /api/jobs/" + job.id,
     });
+  });
+
+  /**
+   * Diktat als Text: vom Tastatur-Mikrofon in der Web-App oder aus einem
+   * Siri-Kurzbefehl ("Text diktieren"). Beides braucht kein HTTPS - anders als
+   * eine Aufnahme im Browser.
+   */
+  app.post("/api/jobs/diktat", async (request, reply) => {
+    if (!cfg.geminiApiKey) {
+      return reply.code(503).send({ error: "Für Diktate braucht es GEMINI_API_KEY." });
+    }
+    const text = (request.body as { text?: unknown } | undefined)?.text;
+    if (typeof text !== "string" || text.trim().length < 3) {
+      return reply.code(400).send({ error: "Das Diktat ist leer." });
+    }
+    // Grosszuegig, aber nicht grenzenlos: Ein ausfuehrliches Rezept hat ein
+    // paar tausend Zeichen, das Zehnfache ist kein Diktat mehr.
+    if (text.length > 30_000) {
+      return reply.code(413).send({ error: "Das Diktat ist zu lang (höchstens 30.000 Zeichen)." });
+    }
+    const job = createDictationJob(text.trim());
+    nudgeWorker();
+    return reply.code(202).send({ id: job.id, status: job.status, kind: "diktat" });
+  });
+
+  /** Diktat als Audiodatei: Sprachmemo, Kurzbefehl "Audio aufnehmen" oder Aufnahme in der App. */
+  app.post("/api/jobs/diktat/audio", async (request, reply) => {
+    if (!cfg.geminiApiKey) {
+      return reply.code(503).send({ error: "Für Diktate braucht es GEMINI_API_KEY." });
+    }
+    if (!request.isMultipart()) {
+      return reply.code(400).send({ error: "Die Aufnahme muss als multipart/form-data kommen." });
+    }
+
+    const job = createAudioDraft();
+    try {
+      let name: string | undefined;
+      for await (const part of request.parts()) {
+        if (part.type !== "file") continue;
+        if (name) throw new HttpError(400, "Bitte nur eine Aufnahme pro Diktat.");
+        let data: Buffer;
+        try {
+          data = await part.toBuffer();
+        } catch (err) {
+          if ((err as { code?: string }).code === "FST_REQ_FILE_TOO_LARGE") {
+            throw new HttpError(
+              413,
+              `Die Aufnahme überschreitet ${Math.round(cfg.maxPhotoBytes / 1024 / 1024)} MB.`,
+            );
+          }
+          throw err;
+        }
+        const check = checkAudio(part.filename ?? "diktat.m4a", data.length);
+        if (!check.ok) throw new HttpError(400, check.error);
+        name = await savePhoto(job.id, 1, check.extension, data);
+      }
+      if (!name) throw new HttpError(400, "Es war keine Aufnahme dabei.");
+
+      queuePhotoJob(job.id, [name]);
+      nudgeWorker();
+      return reply.code(202).send({ id: job.id, status: "queued", kind: "diktat" });
+    } catch (err) {
+      await removePhotos(job.id).catch(() => {});
+      deleteJob(job.id);
+      const status = err instanceof HttpError ? err.status : 400;
+      return reply.code(status).send({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   /**
@@ -320,12 +534,34 @@ export async function buildApp() {
     const job = getJob(id);
     if (!job) return reply.code(404).send({ error: "Job nicht gefunden." });
 
+    // Das Rezept steht schon, nur ein Ziel fehlt: Dann genuegt es, das fertige
+    // Rezept dorthin zu schreiben. Die ganze Strecke noch einmal zu laufen
+    // hiesse neue KI-Anfrage, womoeglich ein anderes Rezept - und das andere
+    // Ziel bekaeme Aenderungen, um die niemand gebeten hat.
+    const fehlend = Object.keys(job.targetErrors) as Target[];
+    if (job.status === "done" && job.recipe && fehlend.length) {
+      try {
+        const result = await republish(job, job.recipe, fehlend);
+        return {
+          id,
+          status: "done",
+          errors: result.errors,
+          mealieUrl: result.mealie?.url,
+          pageUrl: result.notion?.pageUrl,
+        };
+      } catch (err) {
+        return reply
+          .code(502)
+          .send({ error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
     if (job.kind === "foto" && job.photosDeleted) {
       return reply.code(409).send({
         error:
           "Die Fotos dieses Rezepts wurden nach dem erfolgreichen Durchlauf gelöscht. " +
           "Für einen neuen Anlauf lade sie bitte erneut hoch. Das Rezept selbst " +
-          "kannst du hier weiterhin bearbeiten und nach Notion schreiben.",
+          "kannst du hier weiterhin bearbeiten und erneut speichern.",
       });
     }
 
@@ -334,7 +570,43 @@ export async function buildApp() {
     return { id, status: "queued" };
   });
 
-  /** Korrigiertes Rezept aus der Web-App erneut nach Notion schreiben. */
+  /** Korrigiertes Rezept aus der Web-App erneut in alle Ziele schreiben. */
+  /**
+   * "Mit KI überarbeiten": liefert einen Vorschlag, speichert nichts. Der
+   * Vorschlag landet im Editor; gespeichert wird ueber PUT .../recipe.
+   */
+  app.post("/api/jobs/:id/revise", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const job = getJob(id);
+    if (!job) return reply.code(404).send({ error: "Job nicht gefunden." });
+    if (!job.recipe) {
+      return reply.code(409).send({ error: "Zu diesem Eintrag gibt es noch kein Rezept." });
+    }
+    const anweisung = (request.body as { anweisung?: unknown } | undefined)?.anweisung;
+    if (typeof anweisung !== "string" || anweisung.trim().length < 2) {
+      return reply.code(400).send({ error: "Was soll sich ändern?" });
+    }
+    if (anweisung.length > 2000) {
+      return reply.code(413).send({ error: "Die Anweisung ist zu lang (höchstens 2.000 Zeichen)." });
+    }
+    try {
+      // Gespeicherte Rezepte zuerst durchs Schema: aeltere Eintraege tragen
+      // sonst Altlasten wie doppelte Mengen in den Vorschlag.
+      // Ein mitgeschickter Vorschlag geht vor: Dann wird er weiter verfeinert,
+      // statt wieder beim gespeicherten Stand anzufangen.
+      const mitgeschickt = (request.body as { recipe?: unknown }).recipe;
+      const vorschlag = mitgeschickt ? RecipeSchema.safeParse(mitgeschickt) : undefined;
+      if (vorschlag && !vorschlag.success) {
+        return reply.code(400).send({ error: "Der mitgeschickte Vorschlag ist unvollständig." });
+      }
+      const aktuell = vorschlag ?? RecipeSchema.safeParse(job.recipe);
+      const recipe = await reviseRecipe(aktuell.success ? aktuell.data : job.recipe, anweisung);
+      return { recipe };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   app.put("/api/jobs/:id/recipe", async (request, reply) => {
     const { id } = request.params as { id: string };
     const job = getJob(id);
@@ -349,37 +621,14 @@ export async function buildApp() {
     }
 
     try {
-      const mapping = await loadMapping();
-      const result = await upsertRecipe({
-        recipe: parsed.data,
-        sourceUrl: job.url,
-        // Ohne Quell-URL faende der Duplikat-Check die Seite nicht wieder und
-        // eine Korrektur legte eine zweite an.
-        existingPageId: job.kind === "foto" ? (job.notionPageId ?? undefined) : undefined,
-        sourceLabel:
-          job.kind === "foto"
-            ? job.photos.length > 1
-              ? `Eigenes Foto (${job.photos.length} Bilder)`
-              : "Eigenes Foto"
-            : undefined,
-        sourceTitle: job.title ?? undefined,
-        transcript: job.transcript ?? undefined,
-        transcriptSource: job.textSource ?? undefined,
-        mapping,
-      });
-
-      updateJob(id, {
-        recipe: parsed.data,
-        status: "done",
-        step: result.updated ? "Aktualisiert" : "Angelegt",
-        error: null,
-        title: parsed.data.titel,
-        notionPageId: result.pageId ?? null,
-        notionPageUrl: result.pageUrl ?? null,
-        notionUpdated: result.updated,
-      });
-
-      return { ok: true, pageUrl: result.pageUrl, updated: result.updated };
+      const result = await republish(job, parsed.data);
+      return {
+        ok: true,
+        pageUrl: result.notion?.pageUrl,
+        mealieUrl: result.mealie?.url,
+        updated: result.updated,
+        errors: result.errors,
+      };
     } catch (err) {
       return reply
         .code(502)

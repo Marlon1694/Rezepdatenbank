@@ -144,3 +144,41 @@ Web-App, dort wählst du einfach mehrere Fotos auf einmal aus.
 > **HEIC:** iPhones speichern standardmäßig in diesem Format. Der Server nimmt es
 > an. Falls es doch einmal klemmt, hilft in den Kurzbefehlen die Aktion
 > **„Bild konvertieren"** nach JPEG.
+
+---
+
+## Rezept diktieren mit Siri
+
+Freihändig, auch mit Teig an den Fingern: **„Hey Siri, Rezept diktieren"** — dann
+einfach sprechen. Ein kurzer Wunsch („mach mir was aus Kartoffeln und Schnitzel für
+vier") wird zu einem ganzen Rezept, ein ausführliches Diktat mit Mengen und Schritten
+wird übernommen und nur ergänzt.
+
+1. **Kurzbefehle** → **+** → Name **Rezept diktieren** (unter diesem Namen hört Siri)
+2. Aktion **„Text diktieren"**
+   - Sprache: **Deutsch**
+   - Zuhören beenden: **Nach Pause** für kurze Wünsche, **Beim Tippen** für lange
+     Rezepte — dann tippst du auf „Fertig", wenn du alles gesagt hast
+3. Aktion **„Inhalte der URL abrufen"** und aufklappen:
+   - **URL**: `http://192.168.2.227:3000/api/jobs/diktat`
+   - **Methode**: `POST`
+   - **Header**: Schlüssel `Authorization`, Wert `Bearer DEIN_TOKEN`
+   - **Anfragetext**: `JSON` → Feld hinzufügen, Typ **Text**, Schlüssel `text`,
+     Wert = **Diktierter Text** (die Variable aus Schritt 2)
+4. Aktion **„Mitteilung anzeigen"** → „Rezept wird erstellt 🍳"
+
+Unterwegs braucht es wie immer die VPN.
+
+### Variante: Sprachaufnahme statt Siri-Erkennung
+
+Für sehr lange Diktate kann die Aufnahme auch ganz an den Server gehen, der sie mit
+Whisper abschreibt:
+
+1. Aktion **„Audio aufnehmen"** (Starten: sofort, Beenden: beim Tippen)
+2. **„Inhalte der URL abrufen"**: URL `…/api/jobs/diktat/audio`, Methode `POST`,
+   Header wie oben, Anfragetext **Formular** → Feld vom Typ **Datei**, Schlüssel
+   `audio`, Wert = **Aufgenommenes Audio**
+
+In der Web-App gibt es dafür außerdem **Sprachmemo hochladen**: In der App
+*Sprachmemos* aufnehmen, über *Teilen → In „Dateien" sichern* ablegen und dann
+hochladen.

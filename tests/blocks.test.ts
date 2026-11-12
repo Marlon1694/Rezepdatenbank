@@ -165,3 +165,30 @@ describe("chunkBlocks", () => {
     expect(chunkBlocks([{ type: "paragraph" }])).toHaveLength(1);
   });
 });
+
+describe("Zutaten unter den Schritten", () => {
+  const mit: Recipe = {
+    ...base,
+    schritte: ["Pasta kochen.", "Soße rühren.", "Anrichten."],
+    schritte_zutaten: [["Pasta", "Salz"], ["Sahne"], []],
+  };
+  const schritte = (r: Recipe) =>
+    buildRecipeBlocks(r, opts).filter((b) => b.type === "numbered_list_item") as {
+      numbered_list_item: { rich_text: { text: { content: string }; annotations?: { color: string } }[] };
+    }[];
+
+  it("schreibt die Zutaten samt Menge grau unter den Schritt", () => {
+    const [eins, zwei, drei] = schritte(mit);
+    expect(eins!.numbered_list_item.rich_text[1]!.text.content).toBe("\n↳ 200 g Pasta · Salz");
+    expect(eins!.numbered_list_item.rich_text[1]!.annotations?.color).toBe("gray");
+    expect(zwei!.numbered_list_item.rich_text[1]!.text.content).toBe("\n↳ 100 ml Sahne");
+    // Ein Schritt ohne Zutaten bekommt keine leere Zeile.
+    expect(drei!.numbered_list_item.rich_text).toHaveLength(1);
+  });
+
+  it("lässt die Schritte unverändert, wenn die Zuordnung fehlt oder nicht passt", () => {
+    for (const r of [{ ...mit, schritte_zutaten: undefined }, { ...mit, schritte_zutaten: [["Pasta"]] }]) {
+      expect(schritte(r).every((s) => s.numbered_list_item.rich_text.length === 1)).toBe(true);
+    }
+  });
+});

@@ -22,7 +22,36 @@ export const ZutatSchema = z.object({
   /** "200 g", "1 EL", "1 cup (ca. 120 g)" - null, wenn im Video keine Menge genannt wird. */
   menge: optionalText,
   zutat: z.string().min(1),
-});
+  /**
+   * Dieselbe Zutat zerlegt - fuer Mealie. Nur so fasst dessen Einkaufsliste
+   * "200 g Mehl" und "100 g Mehl" zu einer Zeile zusammen, und nur so
+   * funktioniert die Portionsumrechnung. Notion nutzt weiter menge/zutat.
+   *
+   * Alles optional: Bei "eine Prise Salz" oder "nach Geschmack" gibt es keine
+   * Zahl. Und Rezepte, die vor dieser Erweiterung in der Datenbank gelandet
+   * sind, haben die Felder gar nicht - deshalb ist auch `undefined` erlaubt
+   * und nicht nur null. Der Typ soll das zeigen, statt es zu verschweigen.
+   */
+  anzahl: z.number().positive().nullish(),
+  einheit: z.string().nullish(),
+  lebensmittel: z.string().nullish(),
+}).transform((e) => ({ ...e, zutat: zutatOhneMenge(e.menge, e.zutat) }));
+
+/**
+ * Seit es die zerlegten Felder gibt, schreibt Gemini die Menge gern zusaetzlich
+ * in `zutat` - "500 g" + "500 g Karotten". Notion zeigt dann "500 g 500 g
+ * Karotten". Steht die Menge vorn im Zutatentext, wird sie dort gestrichen.
+ */
+export function zutatOhneMenge(menge: string | null | undefined, zutat: string): string {
+  const m = menge?.trim();
+  if (!m) return zutat;
+  const muster = m
+    .split(/\s+/)
+    .map((teil) => teil.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("\\s+");
+  const rest = zutat.replace(new RegExp(`^\\s*${muster}\\s+`, "i"), "").trim();
+  return rest || zutat;
+}
 
 export const ZutatenGruppeSchema = z.object({
   /** "Zutaten" bei einfachen Rezepten, sonst z.B. "Fuer den Teig". */
@@ -38,6 +67,18 @@ export const RecipeSchema = z.object({
   zeit_minuten: z.number().int().positive().nullish().transform((v) => v ?? null),
   zutaten: z.array(ZutatenGruppeSchema).min(1),
   schritte: z.array(z.string().min(1)).min(1),
+  /**
+   * Parallel zu `schritte`: welche Zutaten jeder Schritt verwendet - beim
+   * Namen, so wie er in `zutat` steht. Daraus stehen die Zutaten samt Menge
+   * neben dem Schritt: in Notion als Zeile darunter, in Mealie als
+   * Verknuepfung, die der Kochmodus anzeigt (siehe stepIngredients.ts). Ueber Namen statt Nummern, weil sich ein Modell beim
+   * Abzaehlen leicht vertut und eine im Editor geloeschte Zutat sonst alle
+   * folgenden Nummern verschoebe.
+   *
+   * Optional: aeltere Rezepte haben es nicht, und fehlt es, gibt es eben keine
+   * Verknuepfung - am Rezept selbst aendert das nichts.
+   */
+  schritte_zutaten: z.array(z.array(z.string())).nullish(),
   pro_tipp: z.string().default(""),
   /** Optional, nur befuellt wenn die Notion-DB passende Spalten hat. */
   portionen: optionalText,
@@ -95,7 +136,39 @@ export const GEMINI_RESPONSE_SCHEMA = {
                   type: "string",
                   description: "Weglassen, wenn im Material keine Menge genannt wird",
                 },
-                zutat: { type: "string" },
+                zutat: {
+                  type: "string",
+                  description:
+                    "Die Zutat OHNE die Menge aus 'menge': 'Zwiebeln, fein gewürfelt' - " +
+                    "nicht '2 Zwiebeln, fein gewürfelt'.",
+                },
+                anzahl: {
+                  type: "number",
+                  description:
+                    "Die Menge als Zahl: 200 bei '200 g', 0.5 bei '1/2 TL', 2 bei '2 Eier'. " +
+                    "Bei nicht-metrischen Angaben die metrische Umrechnung. Bei einer Spanne " +
+                    "('1-2 Zehen') die untere Zahl. Weglassen, wenn keine Zahl genannt ist " +
+                    "('eine Prise', 'nach Geschmack').",
+                },
+                einheit: {
+                  type: "string",
+                  description:
+                    "Die Einheit in deutscher Kurzform: g, kg, ml, l, EL, TL, Prise, " +
+                    "Stück, Dose, Bund, Zehe, Packung. Weglassen bei bloßen Stückzahlen " +
+                    "wie '2 Eier'.",
+                },
+                lebensmittel: {
+                  type: "string",
+                  description:
+                    "Nur das Lebensmittel, so wie es auf einem Einkaufszettel steht: im " +
+                    "Singular, ohne Menge, ohne Zubereitung, Form oder Zuschnitt. " +
+                    "'Zwiebel' bei '2 Zwiebeln, fein gewürfelt', 'Hähnchenbrust' bei " +
+                    "'Hähnchenbruststücke', 'Brokkoli' bei 'Brokkoliröschen', 'Orzo' bei " +
+                    "'Orzo (Risoni-Nudeln)'. Was abgemessen wird, bleibt das abgemessene " +
+                    "Produkt: 'Zitronensaft' bei '2 EL Zitronensaft', aber 'Zitrone' bei " +
+                    "'Saft einer Zitrone'. Keine Beispiele oder Alternativen: 'Petersilie' " +
+                    "bei 'Kräuter, z. B. Petersilie oder Basilikum'.",
+                },
               },
               required: ["zutat"],
             },
@@ -109,8 +182,26 @@ export const GEMINI_RESPONSE_SCHEMA = {
       items: { type: "string" },
       description: "Ein Arbeitsschritt pro Eintrag, im Imperativ, ohne eigene Nummerierung",
     },
+    schritte_zutaten: {
+      type: "array",
+      description:
+        "Genau so viele Einträge wie schritte, in derselben Reihenfolge. Für jeden " +
+        "Schritt die Zutaten, die darin hinzukommen - nicht, was schon früher im " +
+        "'Teig', in der 'Masse' oder 'Sauce' steckt; eine Zutat später nur erneut, " +
+        "wenn der Schritt sie ausdrücklich nennt. Jeweils exakt so " +
+        "geschrieben wie im Feld 'zutat'. Steht derselbe Name mehrfach in der " +
+        "Zutatenliste (etwa 'Wasser' für Vorteig und Hauptteig), mit Menge davor: " +
+        "'450 g Wasser'. Leere Liste für Schritte ohne Zutaten.",
+      items: { type: "array", items: { type: "string" } },
+    },
     pro_tipp: { type: "string", description: "Leer lassen, wenn im Material keiner vorkommt" },
-    portionen: { type: "string" },
+    portionen: {
+      type: "string",
+      description:
+        "Für wie viele Personen, z.B. '4'. Nennt das Material keine, aus den Mengen " +
+        "schätzen und '(geschätzt)' anhängen: '4 (geschätzt)'. Bei Brot oder Gebäck die " +
+        "Menge mit Einheit: '1 Brot', '12 Stück'.",
+    },
     kueche: { type: "string" },
     schwierigkeit: {
       type: "string",

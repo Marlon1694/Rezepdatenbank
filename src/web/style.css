@@ -67,7 +67,7 @@ main { padding: 16px; max-width: 720px; margin: 0 auto; }
 
 label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--muted); }
 
-input[type=url], input[type=password], input[type=text], textarea {
+input[type=url], input[type=password], input[type=text], input[type=date], select, textarea {
   width: 100%;
   padding: 12px;
   font-size: 16px; /* verhindert das Zoomen von iOS Safari beim Fokus */
@@ -78,7 +78,9 @@ input[type=url], input[type=password], input[type=text], textarea {
   border-radius: 10px;
 }
 textarea { resize: vertical; min-height: 72px; line-height: 1.45; }
-input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* iOS stellt Datumsfelder sonst nur so hoch wie ihren Text dar. */
+input[type=date] { min-height: 46px; -webkit-appearance: none; appearance: none; }
 
 .row { display: flex; gap: 8px; align-items: stretch; }
 .row input { flex: 1; min-width: 0; }
@@ -196,6 +198,13 @@ button.primary:disabled { opacity: .55; }
 .step-no { flex: 0 0 24px; padding-top: 11px; color: var(--muted); font-size: 13px; font-weight: 700; text-align: right; }
 .step textarea { flex: 1; }
 
+/* Mit KI überarbeiten: zugeklappt über dem Editor, damit es nicht ablenkt. */
+details.reviser { margin: 14px 0 6px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+details.reviser summary { cursor: pointer; font-weight: 600; }
+details.reviser[open] summary { margin-bottom: 10px; }
+details.reviser textarea { font-size: 16px; }
+.msg.vorschlag { scroll-margin-top: 96px; margin: 4px 0 12px; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--line); }
+
 details.transcript { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 14px; }
 details.transcript summary { cursor: pointer; color: var(--muted); font-size: 14px; font-weight: 600; }
 details.transcript pre {
@@ -280,3 +289,64 @@ details.transcript pre {
 }
 
 .thumb-del:hover { background: #000d; }
+
+/* Die Ziel-Links stehen rechts zusammen, "Zurück" bleibt links. */
+.sheet-head #notionLink { margin-left: auto; }
+.sheet-head #notionLink[hidden] + #mealieLink { margin-left: auto; }
+
+/* ── Küche ─────────────────────────────────────────────────────────────────── */
+
+.kitchen-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.kitchen-buttons button {
+  flex-direction: column;
+  gap: 4px;
+  font-size: 22px;
+  padding: 12px 6px;
+  justify-content: center;
+}
+.kitchen-buttons button span { font-size: 13px; }
+
+.k-row { display: flex; gap: 10px; }
+.k-row > * { flex: 1; min-width: 0; }
+.k-field { display: block; margin: 10px 0 0; }
+.k-field > span { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.k-field input, .k-field select, .k-field textarea { width: 100%; box-sizing: border-box; }
+.k-result { margin-top: 14px; }
+.k-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+
+.k-day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+.k-date { font-weight: 600; font-size: 13px; width: 64px; flex: none; }
+.k-main { flex: 1; min-width: 0; }
+.k-main a { font-weight: 600; color: inherit; }
+.k-actions { display: flex; gap: 6px; flex: none; }
+.k-actions .small-btn { padding: 6px 9px; }
+
+.k-recipes { margin: 6px 0 12px; line-height: 1.6; }
+.k-recipes a { color: inherit; }
+.k-shop { display: flex; flex-direction: column; margin: 8px 0 14px; }
+.k-sub { font-size: 12px; font-weight: 700; text-transform: uppercase; opacity: .6; margin: 14px 0 4px; }
+.k-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.k-item input { width: 20px; height: 20px; margin: 1px 0 0; flex: none; }
+
+/* ── Diktat ────────────────────────────────────────────────────────────────── */
+#diktatText { margin-bottom: 4px; }
+.diktat-row { margin-top: 8px; }
+#diktatRecord.recording { border-color: #c0392b; color: #c0392b; }

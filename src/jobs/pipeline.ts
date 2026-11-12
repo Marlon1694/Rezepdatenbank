@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import { extract, detectPlatform, type ProgressFn } from "../extract/index.ts";
 import {
   readPhotos,
@@ -7,16 +8,20 @@ import {
   type RecipeMode,
 } from "../extract/photo.ts";
 import { extractRecipe } from "../llm/index.ts";
-import { getDataSourceSchema } from "../notion/client.ts";
-import { availableExtraFields, knownTags, knownOptions } from "../notion/mapper.ts";
-import { upsertRecipe, type UpsertResult } from "../notion/upsert.ts";
-import { loadMapping } from "./mapping.ts";
+import { publishRecipe, promptTargetContext, type PublishResult } from "../targets.ts";
+import { transcribe } from "../transcribe/index.ts";
+import { recipeSignals } from "../extract/vtt.ts";
 import { cleanUrl } from "../lib/url.ts";
 import { recipeShortcoming, type Recipe } from "../llm/recipeSchema.ts";
 
 export interface PipelineResult {
   recipe: Recipe;
-  upsert: UpsertResult;
+  /** Ergebnis je Ziel (Notion, Mealie) samt Fehlern der Ziele, die nicht geklappt haben. */
+  publish: PublishResult;
+  /** Siehe Job.coverRef. */
+  coverRef?: string;
+  /** Siehe Job.aiNotice. */
+  aiNotice?: string;
   title?: string;
   platform: string;
   textSource: string;
@@ -33,6 +38,8 @@ export interface PhotoPipelineInput {
   reading?: PhotoReading;
   /** Bereits bestehende Notion-Seite dieses Jobs (zweiter Anlauf). */
   existingPageId?: string;
+  /** Bereits bestehendes Mealie-Rezept dieses Jobs. */
+  existingMealieSlug?: string;
   onProgress?: ProgressFn;
   dryRun?: boolean;
 }
@@ -111,7 +118,7 @@ export async function runPhotoPipeline(input: PhotoPipelineInput): Promise<Photo
   );
 
   onProgress("Rezept wird erstellt");
-  const [schema, mapping] = await Promise.all([getDataSourceSchema(), loadMapping()]);
+  const ziele = await promptTargetContext();
 
   const recipe = await extractRecipe({
     input: reading.abschrift || "(Die Bilder enthalten keinen lesbaren Text.)",
@@ -120,9 +127,9 @@ export async function runPhotoPipeline(input: PhotoPipelineInput): Promise<Photo
     platform: "Foto",
     mode,
     fehlt: reading.fehlt,
-    knownTags: knownTags(schema, mapping),
-    knownIngredients: knownOptions(schema, "zutatenliste", mapping),
-    extraFields: availableExtraFields(schema, mapping),
+    knownTags: ziele.knownTags,
+    knownIngredients: ziele.knownIngredients,
+    extraFields: ziele.extraFields,
   });
 
   // Im Erfindungsmodus ist das Rezept definitionsgemaess vollstaendig - die
@@ -137,30 +144,126 @@ export async function runPhotoPipeline(input: PhotoPipelineInput): Promise<Photo
 
   const label =
     input.paths.length > 1 ? `Eigenes Foto (${input.paths.length} Bilder)` : "Eigenes Foto";
+  const hinweis = noticeFor(mode, reading.fehlt);
 
-  onProgress(input.dryRun ? "Vorschau wird gebaut" : "Wird nach Notion geschrieben");
-  const upsert = await upsertRecipe({
+  onProgress(input.dryRun ? "Vorschau wird gebaut" : "Wird gespeichert");
+  const publish = await publishRecipe({
     recipe,
     sourceUrl: "",
     sourceLabel: label,
     sourceTitle: reading.titel,
     existingPageId: input.existingPageId,
+    existingMealieSlug: input.existingMealieSlug,
     coverFile:
       reading.gerichtBildIndex !== undefined ? input.paths[reading.gerichtBildIndex] : undefined,
-    aiNotice: noticeFor(mode, reading.fehlt),
+    aiNotice: hinweis,
     transcript: reading.abschrift,
     transcriptSource: `Foto (${reading.art})`,
-    mapping,
     dryRun: input.dryRun,
   });
 
+  const coverPath =
+    reading.gerichtBildIndex !== undefined ? input.paths[reading.gerichtBildIndex] : undefined;
+
   return {
     recipe,
-    upsert,
+    publish,
+    coverRef: coverPath ? basename(coverPath) : undefined,
+    aiNotice: hinweis,
     title: reading.titel ?? recipe.titel,
     platform: "Foto",
     textSource: `Foto (${reading.art})`,
     transcript: reading.abschrift,
+  };
+}
+
+export interface DictationInput {
+  /** Bereits vorliegender Text - vom Tastatur-Diktat, aus Siri oder einem frueheren Lauf. */
+  text?: string;
+  /** Sonst eine Audiodatei, die erst abgeschrieben wird. */
+  audioPath?: string;
+  existingPageId?: string;
+  existingMealieSlug?: string;
+  onProgress?: ProgressFn;
+  /** Sobald die Audiodatei abgeschrieben ist - damit der Text einen Fehlschlag danach uebersteht. */
+  onTranscribed?: (text: string) => void;
+}
+
+/**
+ * Wie viel hat die KI selbst beigetragen? Das steht oben auf der Seite.
+ *
+ * Grob geschaetzt am Diktat: Kommen darin Mengen oder Arbeitsschritte vor,
+ * war es ein Rezept, das ergaenzt wurde; sonst ein Wunsch, aus dem die KI ein
+ * Rezept entwickelt hat. Beides ist in Ordnung - nur soll spaeter erkennbar
+ * sein, was davon von dir stammt.
+ */
+export function dictationNotice(text: string): string {
+  const { mengen, schritte } = recipeSignals(text);
+  return mengen + schritte >= 3
+    ? "Nach deinem Diktat erstellt. Mit „(ergänzt)“ markierte Stellen hat die KI hinzugefügt."
+    : "Von der KI nach deinem Wunsch entwickelt — es gibt keine Vorlage, Mengen und Zeiten sind Vorschläge.";
+}
+
+/**
+ * Aus Gesprochenem ein Rezept. Ab dem Strukturieren derselbe Weg wie bei
+ * Links und Fotos: gleicher Prompt, gleiches Schema, gleiche Ziele.
+ */
+export async function runDictationPipeline(input: DictationInput): Promise<PipelineResult> {
+  const onProgress = input.onProgress ?? (() => {});
+
+  let text = input.text?.trim() ?? "";
+  if (!text && input.audioPath) {
+    onProgress("Wird abgeschrieben");
+    text = (await transcribe(input.audioPath)).text.trim();
+    if (text) input.onTranscribed?.(text);
+  }
+  if (text.length < 3) {
+    throw new Error("Im Diktat war nichts zu verstehen. Bitte noch einmal sprechen.");
+  }
+
+  onProgress("Rezept wird erstellt");
+  const ziele = await promptTargetContext();
+  const recipe = await extractRecipe({
+    input: text,
+    sourceUrl: "",
+    platform: "Diktat",
+    mode: "diktat",
+    knownTags: ziele.knownTags,
+    knownIngredients: ziele.knownIngredients,
+    extraFields: ziele.extraFields,
+  });
+
+  // Auch ein frei entwickeltes Rezept muss kochbar sein - ein einziger Schritt
+  // oder zwei Zutaten ohne Mengen waeren keines.
+  const mangel = recipeShortcoming(recipe);
+  if (mangel) {
+    throw new Error(
+      `Aus dem Diktat ließ sich kein vollständiges Rezept machen — ${mangel}. ` +
+        `Sag ruhig etwas mehr dazu, etwa welche Zutaten oder wie viele Personen.`,
+    );
+  }
+
+  onProgress("Wird gespeichert");
+  const publish = await publishRecipe({
+    recipe,
+    sourceUrl: "",
+    sourceLabel: "Eigenes Diktat",
+    sourceIcon: "🎙️",
+    existingPageId: input.existingPageId,
+    existingMealieSlug: input.existingMealieSlug,
+    aiNotice: dictationNotice(text),
+    transcript: text,
+    transcriptSource: "Diktat",
+  });
+
+  return {
+    recipe,
+    publish,
+    aiNotice: dictationNotice(text),
+    title: recipe.titel,
+    platform: "Diktat",
+    textSource: "Diktat",
+    transcript: text,
   };
 }
 
@@ -172,6 +275,7 @@ export async function runPipeline(
   url: string,
   onProgress: ProgressFn = () => {},
   dryRun = false,
+  opts: { existingMealieSlug?: string } = {},
 ): Promise<PipelineResult> {
   const platform = detectPlatform(url);
 
@@ -190,7 +294,7 @@ export async function runPipeline(
   onProgress("Rezept wird erstellt");
   // Schema vorher laden: es bestimmt, welche Zusatzfelder der Prompt anfordert und
   // welche Tags dem Modell als bereits vorhanden angeboten werden.
-  const [schema, mapping] = await Promise.all([getDataSourceSchema(), loadMapping()]);
+  const ziele = await promptTargetContext();
 
   const recipe = await extractRecipe({
     input: extracted.text,
@@ -198,9 +302,9 @@ export async function runPipeline(
     sourceTitle: extracted.title,
     uploader: extracted.uploader,
     platform,
-    knownTags: knownTags(schema, mapping),
-    knownIngredients: knownOptions(schema, "zutatenliste", mapping),
-    extraFields: availableExtraFields(schema, mapping),
+    knownTags: ziele.knownTags,
+    knownIngredients: ziele.knownIngredients,
+    extraFields: ziele.extraFields,
   });
 
   // Lieber nichts schreiben als eine Karte, die nach Rezept aussieht und keines ist.
@@ -218,21 +322,22 @@ export async function runPipeline(
     recipe.zeit_minuten = extracted.hintMinutes;
   }
 
-  onProgress(dryRun ? "Vorschau wird gebaut" : "Wird nach Notion geschrieben");
-  const upsert = await upsertRecipe({
+  onProgress(dryRun ? "Vorschau wird gebaut" : "Wird gespeichert");
+  const publish = await publishRecipe({
     recipe,
     sourceUrl: notionUrl,
     thumbnailUrl: extracted.thumbnailUrl,
     sourceTitle: extracted.title,
     transcript: extracted.text,
     transcriptSource: extracted.source,
-    mapping,
+    existingMealieSlug: opts.existingMealieSlug,
     dryRun,
   });
 
   return {
     recipe,
-    upsert,
+    publish,
+    coverRef: extracted.thumbnailUrl,
     title: extracted.title,
     platform,
     textSource: extracted.source,

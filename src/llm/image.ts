@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { coverWants, getConfig } from "../config.ts";
-import { getGemini } from "./gemini.ts";
+import { getImageClient } from "./gemini.ts";
 import type { Recipe } from "./recipeSchema.ts";
 
 /**
@@ -39,7 +39,7 @@ export async function buildImagePrompt(recipe: Recipe): Promise<string> {
 
 /** Imagen liefert Bilder ueber einen eigenen Endpunkt. */
 async function viaImagen(model: string, prompt: string): Promise<GeneratedImage | undefined> {
-  const res = await getGemini().models.generateImages({
+  const res = await getImageClient().models.generateImages({
     model,
     prompt,
     config: { numberOfImages: 1, aspectRatio: "16:9" },
@@ -70,7 +70,7 @@ async function viaGemini(model: string, prompt: string): Promise<GeneratedImage 
 
   for (const responseModalities of variants) {
     try {
-      const res = await getGemini().models.generateContent({
+      const res = await getImageClient().models.generateContent({
         model,
         contents: prompt,
         config: { responseModalities },
@@ -101,7 +101,7 @@ export function coverImageBlocker(): string {
   const cfg = getConfig();
   if (!coverWants(cfg.coverSource).ai) return `COVER_SOURCE steht auf "${cfg.coverSource}"`;
   if (!cfg.imageModel) return "IMAGE_MODEL ist nicht gesetzt";
-  if (!cfg.geminiApiKey) return "GEMINI_API_KEY fehlt";
+  if (!cfg.geminiApiKey && !cfg.geminiPaidApiKey) return "weder GEMINI_API_KEY noch GEMINI_PAID_API_KEY gesetzt";
   return "";
 }
 
