@@ -93,9 +93,13 @@ export function enrichPrompt(recipe: Recipe): string {
     "",
     "Aufgabe:",
     "1. Zerlege jede Zutat in Anzahl, Einheit und Lebensmittel.",
-    "2. Nenne für jeden Schritt die Nummern der Zutaten, die darin verwendet werden. " +
-      "Auch indirekt Genanntes zählt: „die Gewürze“ meint die Gewürze aus der Liste. " +
-      "Schritte ohne Zutaten bekommen eine leere Liste.",
+    "2. Nenne für jeden Schritt die Nummern der Zutaten, die in diesem Schritt " +
+      "hinzukommen oder zum ersten Mal verarbeitet werden. Auch indirekt Genanntes " +
+      "zählt: „die Gewürze“ meint die Gewürze aus der Liste. Was schon in einem " +
+      "früheren Schritt verarbeitet wurde und jetzt nur als „Teig“, „Masse“ oder " +
+      "„Sauce“ weiterläuft, zählt nicht. Eine Zutat erscheint später nur noch einmal, " +
+      "wenn der Schritt sie ausdrücklich nennt („mit Salz abschmecken“, „die " +
+      "restliche Butter“). Schritte ohne neue Zutaten bekommen eine leere Liste.",
   ].join("\n");
 }
 

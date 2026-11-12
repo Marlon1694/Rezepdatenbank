@@ -37,7 +37,8 @@ export function stepIngredientIndices(recipe: Recipe): number[][] {
     for (const n of new Set(namen)) nachName.set(n, [...(nachName.get(n) ?? []), i]);
   });
 
-  return liste.map((namen) => {
+  const schonDran = new Set<number>();
+  return liste.map((namen, schritt) => {
     const treffer = new Set<number>();
     for (const n of namen) {
       const kandidaten = nachName.get(norm(n)) ?? [];
@@ -46,8 +47,36 @@ export function stepIngredientIndices(recipe: Recipe): number[][] {
       // Eindeutig wird er mit Menge: "450 g Wasser".
       if (kandidaten.length === 1) treffer.add(kandidaten[0]!);
     }
-    return [...treffer].sort((a, b) => a - b);
+    // "Den Teig nachkneten" ist kein Schritt mit Mehl, Hefe und Wasser - die
+    // stecken seit Schritt 2 im Teig. Was frueher schon dran war, erscheint
+    // nur wieder, wenn der Schritt es beim Namen nennt ("mit Salz abschmecken").
+    const text = recipe.schritte[schritt] ?? "";
+    const ergebnis = [...treffer]
+      .filter((i) => !schonDran.has(i) || nenntZutat(text, eintraege[i]!))
+      .sort((a, b) => a - b);
+    for (const i of ergebnis) schonDran.add(i);
+    return ergebnis;
   });
+}
+
+/**
+ * Nennt der Schritt die Zutat? Als ganzes Wort, mit den ueblichen
+ * Pluralendungen ("Ei" -> "Eier", "Zwiebel" -> "Zwiebeln"). Sonst steckte
+ * "Ei" in "eine" und "Teig", "Wasser" in "Eiswasser".
+ */
+export function nenntZutat(
+  text: string,
+  z: { zutat: string; lebensmittel?: string | null },
+): boolean {
+  const namen = [z.lebensmittel ?? "", z.zutat.split(/[,(]/)[0] ?? ""]
+    .map((n) => n.trim())
+    .filter((n) => n.length >= 2);
+  return namen.some((n) =>
+    new RegExp(
+      `(?<!\\p{L})${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:e|n|en|er|ern|s|es|ns)?(?!\\p{L})`,
+      "iu",
+    ).test(text),
+  );
 }
 
 /** Wie die Zutaten unter einem Schritt erscheinen: "200 g Mehl · 2 Eier". */

@@ -184,7 +184,9 @@ export const GEMINI_RESPONSE_SCHEMA = {
       type: "array",
       description:
         "Genau so viele Einträge wie schritte, in derselben Reihenfolge. Für jeden " +
-        "Schritt die Zutaten, die darin verwendet werden - jeweils exakt so " +
+        "Schritt die Zutaten, die darin hinzukommen - nicht, was schon früher im " +
+        "'Teig', in der 'Masse' oder 'Sauce' steckt; eine Zutat später nur erneut, " +
+        "wenn der Schritt sie ausdrücklich nennt. Jeweils exakt so " +
         "geschrieben wie im Feld 'zutat'. Steht derselbe Name mehrfach in der " +
         "Zutatenliste (etwa 'Wasser' für Vorteig und Hauptteig), mit Menge davor: " +
         "'450 g Wasser'. Leere Liste für Schritte ohne Zutaten.",
