@@ -76,6 +76,12 @@ export const ENRICH_SCHEMA = {
         required: ["schritt", "zutaten"],
       },
     },
+    portionen: {
+      type: "string",
+      description:
+        "Nur wenn oben 'Portionen: unbekannt' steht: aus den Mengen geschätzt, z.B. '4'. " +
+        "Bei Brot oder Gebäck die Menge mit Einheit: '1 Brot', '12 Stück'.",
+    },
   },
   required: ["zutaten", "schritte"],
 } as const;
@@ -86,6 +92,7 @@ export function enrichPrompt(recipe: Recipe): string {
     "Hier ist ein Rezept. Ändere nichts daran – ergänze nur Daten dazu.",
     "",
     `Rezept: ${recipe.titel}`,
+    `Portionen: ${recipe.portionen ?? "unbekannt"}`,
     "",
     "Zutaten:",
     ...eintraege.map((z, i) => `${i + 1}. ${[z.menge, z.zutat].filter(Boolean).join(" ")}`),
@@ -102,10 +109,14 @@ export function enrichPrompt(recipe: Recipe): string {
       "„Sauce“ weiterläuft, zählt nicht. Eine Zutat erscheint später nur noch einmal, " +
       "wenn der Schritt sie ausdrücklich nennt („mit Salz abschmecken“, „die " +
       "restliche Butter“). Schritte ohne neue Zutaten bekommen eine leere Liste.",
+    ...(recipe.portionen
+      ? []
+      : ["3. Schätze aus den Mengen, für wie viele Personen das Rezept reicht (Feld `portionen`)."]),
   ].join("\n");
 }
 
 type Antwort = {
+  portionen?: unknown;
   zutaten?: { nr?: unknown; anzahl?: unknown; einheit?: unknown; lebensmittel?: unknown }[];
   schritte?: { schritt?: unknown; zutaten?: unknown }[];
 };
@@ -187,9 +198,16 @@ export function mergeEnrichment(
     }
   }
 
+  // Portionen nur ergaenzen, nie ersetzen - und als Schaetzung kennzeichnen.
+  const geschaetzt = text(antwort.portionen);
+  const portionen =
+    recipe.portionen ??
+    (geschaetzt ? (/gesch[äa]tzt/i.test(geschaetzt) ? geschaetzt : `${geschaetzt} (geschätzt)`) : null);
+
   return {
     ...recipe,
     zutaten,
+    portionen,
     schritte_zutaten: irgendwas ? proSchritt.map((s) => [...s]) : recipe.schritte_zutaten,
   };
 }

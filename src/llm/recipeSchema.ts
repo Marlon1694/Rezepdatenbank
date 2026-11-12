@@ -195,7 +195,13 @@ export const GEMINI_RESPONSE_SCHEMA = {
       items: { type: "array", items: { type: "string" } },
     },
     pro_tipp: { type: "string", description: "Leer lassen, wenn im Material keiner vorkommt" },
-    portionen: { type: "string" },
+    portionen: {
+      type: "string",
+      description:
+        "Für wie viele Personen, z.B. '4'. Nennt das Material keine, aus den Mengen " +
+        "schätzen und '(geschätzt)' anhängen: '4 (geschätzt)'. Bei Brot oder Gebäck die " +
+        "Menge mit Einheit: '1 Brot', '12 Stück'.",
+    },
     kueche: { type: "string" },
     schwierigkeit: {
       type: "string",

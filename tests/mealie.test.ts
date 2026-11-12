@@ -179,7 +179,7 @@ afterAll(() => new Promise<void>((r) => server.close(() => r())));
 const { resetConfigCache } = await import("../src/config.ts");
 const { resetMealieCache } = await import("../src/mealie/client.ts");
 const { upsertMealieRecipe } = await import("../src/mealie/recipes.ts");
-const { mapIngredients, parseServings, ingredientNote, norm, linkSteps } = await import(
+const { mapIngredients, parseYield, ingredientNote, norm, linkSteps, mapRecipe } = await import(
   "../src/mealie/mapper.ts"
 );
 const { RecipeSchema } = await import("../src/llm/recipeSchema.ts");
@@ -447,12 +447,31 @@ describe("linkSteps", () => {
 });
 
 describe("Mapper", () => {
-  it("liest Portionen aus Text", () => {
-    expect(parseServings("4")).toBe(4);
-    expect(parseServings("für 4 Personen")).toBe(4);
-    expect(parseServings("2,5 Liter")).toBe(2.5);
-    expect(parseServings("ein Blech")).toBeUndefined();
-    expect(parseServings(null)).toBeUndefined();
+  it("unterscheidet Portionen von einer Menge", () => {
+    expect(parseYield("4")).toEqual({ servings: 4, geschaetzt: false });
+    expect(parseYield("für 4 Personen")).toEqual({ servings: 4, geschaetzt: false });
+    expect(parseYield("4 (geschätzt)")).toEqual({ servings: 4, geschaetzt: true });
+    expect(parseYield("ca. 2-3 Portionen")).toEqual({ servings: 2, geschaetzt: false });
+    expect(parseYield("1 Brot")).toEqual({ menge: 1, einheit: "Brot", geschaetzt: false });
+    expect(parseYield("12 Stück (geschätzt)")).toEqual({ menge: 12, einheit: "Stück", geschaetzt: true });
+    expect(parseYield("ein Blech")).toEqual({ text: "ein Blech", geschaetzt: false });
+    expect(parseYield(null)).toEqual({ geschaetzt: false });
+  });
+
+  it("schreibt Portionen oder Menge nach Mealie und vermerkt eine Schätzung", () => {
+    const lookups = { tags: [], categories: [], foods: new Map(), units: new Map() };
+    const basis = {
+      titel: "X",
+      zutaten: [{ gruppe: "Zutaten", eintraege: [{ zutat: "Mehl" }] }],
+      schritte: ["Backen."],
+    };
+    const geschaetzt = mapRecipe(RecipeSchema.parse({ ...basis, portionen: "4 (geschätzt)" }), lookups, { sourceUrl: "" });
+    expect(geschaetzt).toMatchObject({ recipeServings: 4, recipeYieldQuantity: 0, recipeYield: null });
+    expect(geschaetzt.notes.map((n) => n.title)).toContain("🍽️ Portionen geschätzt");
+
+    const brot = mapRecipe(RecipeSchema.parse({ ...basis, portionen: "1 Brot" }), lookups, { sourceUrl: "" });
+    expect(brot).toMatchObject({ recipeServings: 0, recipeYieldQuantity: 1, recipeYield: "Brot" });
+    expect(brot.notes.map((n) => n.title)).not.toContain("🍽️ Portionen geschätzt");
   });
 
   it("trennt den Zubereitungshinweis vom Lebensmittel", () => {

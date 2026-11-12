@@ -25,7 +25,11 @@ export interface PromptContext {
 }
 
 const EXTRA_TEXT: Record<ExtraField, string> = {
-  portionen: "- `portionen`: Für wie viele Personen bzw. welche Menge das Rezept gedacht ist.",
+  portionen:
+    "- `portionen`: Für wie viele Personen bzw. welche Menge das Rezept gedacht ist. " +
+    "Nennt das Material keine Portionen, schätze sie aus den Mengen und schreibe " +
+    "„(geschätzt)“ dahinter: „4 (geschätzt)“. Bei Brot, Gebäck oder Vorräten die Menge " +
+    "mit Einheit: „1 Brot“, „12 Stück“, „1 Glas“.",
   kueche: "- `kueche`: Länderküche oder Region (z.B. Italienisch, Thai, Fränkisch).",
   schwierigkeit:
     "- `schwierigkeit`: Genau eines von **Leicht**, **Mittel**, **Schwer**. " +

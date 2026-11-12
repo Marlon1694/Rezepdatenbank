@@ -297,3 +297,17 @@ describe("Gleiche Zutat mit gleicher Menge in zwei Gruppen", () => {
     ]);
   });
 });
+
+describe("Portionen beim Aufwerten", () => {
+  it("ergänzt fehlende Portionen als Schätzung", () => {
+    const r = mergeEnrichment(altesRezept(), { zutaten: [], schritte: [], portionen: "4" });
+    expect(r.portionen).toBe("4 (geschätzt)");
+    expect(enrichPrompt(altesRezept())).toContain("Portionen: unbekannt");
+  });
+
+  it("lässt vorhandene Portionen stehen und fragt gar nicht erst", () => {
+    const mit = { ...altesRezept(), portionen: "2" };
+    expect(mergeEnrichment(mit, { zutaten: [], schritte: [], portionen: "6" }).portionen).toBe("2");
+    expect(enrichPrompt(mit)).not.toContain("Schätze");
+  });
+});

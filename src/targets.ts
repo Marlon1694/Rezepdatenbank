@@ -129,10 +129,16 @@ const ALL_EXTRAS: ExtraField[] = ["portionen", "kueche", "schwierigkeit", "zutat
 export async function promptTargetContext(): Promise<PromptTargetContext> {
   if (getConfig().notionEnabled) {
     const [schema, mapping] = await Promise.all([getDataSourceSchema(), loadMapping()]);
+    const notionFelder = availableExtraFields(schema, mapping);
     return {
       knownTags: notionKnownTags(schema, mapping),
       knownIngredients: knownOptions(schema, "zutatenliste", mapping),
-      extraFields: availableExtraFields(schema, mapping),
+      // Mealie hat Felder fuer Portionen, Kueche und Schwierigkeit - auch wenn
+      // die Notion-Datenbank keine Spalte dafuer hat. Sonst fragte die App nie
+      // danach, und Mealie bekaeme nie eine Portionenzahl.
+      extraFields: mealieEnabled()
+        ? [...new Set<ExtraField>([...notionFelder, "portionen", "kueche", "schwierigkeit"])]
+        : notionFelder,
     };
   }
 

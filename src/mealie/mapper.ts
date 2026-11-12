@@ -37,16 +37,39 @@ export function norm(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+export interface Ausbeute {
+  /** Fuer wie viele Personen - Mealies recipeServings. */
+  servings?: number;
+  /** "1 Brot", "12 Stück" - Mealies recipeYieldQuantity und recipeYield. */
+  menge?: number;
+  einheit?: string;
+  /** Keine Zahl erkannt: der Text, wie er ist. */
+  text?: string;
+  /** Die KI hat die Zahl aus den Mengen geschaetzt. */
+  geschaetzt: boolean;
+}
+
+const PERSONEN = /^(personen?|portionen?|pers\.?|leute|esser|servings?|people)$/i;
+
 /**
- * "4", "4 Personen", "für 4" -> 4. Mealie kennt dafuer recipeServings als Zahl;
- * passt nichts, bleibt die Angabe als Text in recipeYield erhalten.
+ * "4" und "4 Personen" sind Portionen, "1 Brot" und "12 Stück" eine Menge.
+ * Atelier rechnet beides um - aber "12 Stück" als 12 Personen hiesse,
+ * fuer zwei Leute ein Sechstel des Blechs.
  */
-export function parseServings(portionen: string | null | undefined): number | undefined {
-  if (!portionen) return undefined;
-  const m = /(\d+(?:[.,]\d+)?)/.exec(portionen);
-  if (!m?.[1]) return undefined;
-  const n = Number(m[1].replace(",", "."));
-  return Number.isFinite(n) && n > 0 ? n : undefined;
+export function parseYield(portionen: string | null | undefined): Ausbeute {
+  const roh = (portionen ?? "").trim();
+  const geschaetzt = /gesch[äa]tzt/i.test(roh);
+  const ohne = roh
+    .replace(/\(?\s*gesch[äa]tzt\s*\)?/gi, "")
+    .replace(/\b(ca\.?|etwa|für|fuer|rund)\s*/gi, "")
+    .trim();
+  if (!ohne) return { geschaetzt };
+  const m = /(\d+(?:[.,]\d+)?)/.exec(ohne);
+  const n = m?.[1] ? Number(m[1].replace(",", ".")) : NaN;
+  if (!Number.isFinite(n) || n <= 0) return { text: roh, geschaetzt };
+  const rest = ohne.replace(m![0], "").replace(/[-–]\s*\d+(?:[.,]\d+)?/, "").trim();
+  if (!rest || PERSONEN.test(rest)) return { servings: n, geschaetzt };
+  return { menge: n, einheit: rest, geschaetzt };
 }
 
 /**
@@ -151,11 +174,17 @@ export function linkSteps(
 
 /** Der PATCH-Inhalt. Nur die Felder, die wir besitzen - der Rest bleibt in Mealie, wie er ist. */
 export function mapRecipe(recipe: Recipe, lookups: Lookups, opts: MapOptions) {
-  const servings = parseServings(recipe.portionen);
+  const ausbeute = parseYield(recipe.portionen);
 
   const notes: { title: string; text: string }[] = [];
   if (opts.aiNotice?.trim()) notes.push({ title: "🤖 Hinweis", text: opts.aiNotice.trim() });
   if (recipe.pro_tipp.trim()) notes.push({ title: "💡 Pro-Tipp", text: recipe.pro_tipp.trim() });
+  if (ausbeute.geschaetzt && (ausbeute.servings || ausbeute.menge)) {
+    notes.push({
+      title: "🍽️ Portionen geschätzt",
+      text: "Das Original nennt keine Portionenzahl – sie ist aus den Mengen geschätzt.",
+    });
+  }
 
   const ingredients = mapIngredients(recipe, lookups);
   const links = linkSteps(recipe, ingredients);
@@ -168,9 +197,13 @@ export function mapRecipe(recipe: Recipe, lookups: Lookups, opts: MapOptions) {
     name: recipe.titel,
     orgURL: opts.sourceUrl || null,
     totalTime: recipe.zeit_text || null,
-    ...(servings !== undefined
-      ? { recipeServings: servings, recipeYield: null }
-      : { recipeYield: recipe.portionen ?? null }),
+    // Immer alle drei Felder: Wechselt ein Rezept von "12 Stück" zu "4", darf
+    // die alte Menge nicht stehen bleiben.
+    ...(ausbeute.servings
+      ? { recipeServings: ausbeute.servings, recipeYieldQuantity: 0, recipeYield: null }
+      : ausbeute.menge
+        ? { recipeServings: 0, recipeYieldQuantity: ausbeute.menge, recipeYield: ausbeute.einheit }
+        : { recipeServings: 0, recipeYieldQuantity: 0, recipeYield: ausbeute.text ?? null }),
     tags: lookups.tags,
     recipeCategory: lookups.categories,
     recipeIngredient: ingredients,
