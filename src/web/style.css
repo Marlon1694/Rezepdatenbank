@@ -198,6 +198,13 @@ button.primary:disabled { opacity: .55; }
 .step-no { flex: 0 0 24px; padding-top: 11px; color: var(--muted); font-size: 13px; font-weight: 700; text-align: right; }
 .step textarea { flex: 1; }
 
+/* Mit KI überarbeiten: zugeklappt über dem Editor, damit es nicht ablenkt. */
+details.reviser { margin: 14px 0 6px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+details.reviser summary { cursor: pointer; font-weight: 600; }
+details.reviser[open] summary { margin-bottom: 10px; }
+details.reviser textarea { font-size: 16px; }
+.msg.vorschlag { scroll-margin-top: 96px; margin: 4px 0 12px; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--line); }
+
 details.transcript { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 14px; }
 details.transcript summary { cursor: pointer; color: var(--muted); font-size: 14px; font-weight: 600; }
 details.transcript pre {

@@ -548,7 +548,21 @@ async function openDetail(id) {
     box.appendChild(galerie);
   }
 
-  if (job.recipe) box.appendChild(buildEditor(job));
+  if (job.recipe) {
+    let editor = buildEditor(job);
+    // Worauf die naechste Anweisung aufbaut: erst das gespeicherte Rezept,
+    // danach der letzte Vorschlag - so laesst er sich schrittweise verfeinern.
+    let basis = null;
+    if (job.status === "done") box.appendChild(buildReviser(job, () => basis, (vorschlag) => {
+      // Der Vorschlag ersetzt nur das Formular - gespeichert ist noch nichts.
+      basis = vorschlag;
+      const neu = buildEditor({ ...job, recipe: vorschlag }, { vorschlag: true });
+      editor.replaceWith(neu);
+      editor = neu;
+      (neu.querySelector(".vorschlag") || neu).scrollIntoView({ behavior: "smooth", block: "start" });
+    }));
+    box.appendChild(editor);
+  }
 
   const actions = document.createElement("div");
   actions.className = "actions";
@@ -645,10 +659,70 @@ async function openDetail(id) {
   document.body.style.overflow = "hidden";
 }
 
-/** Editierbares Rezept-Formular. Speichern schreibt die Notion-Seite neu. */
-function buildEditor(job) {
+/**
+ * "Mit KI überarbeiten": Anweisung tippen oder per Tastatur-Mikrofon sprechen,
+ * die KI liefert einen Vorschlag. Der erscheint im Editor - gespeichert wird
+ * erst dort.
+ */
+function buildReviser(job, getBasis, onVorschlag) {
+  const box = document.createElement("details");
+  box.className = "reviser";
+  box.innerHTML = `<summary>✨ Mit KI überarbeiten</summary>`;
+
+  const ta = textarea("", 2);
+  ta.placeholder = "z. B. schärfer · ohne Sahne · für 2 statt 4 Personen · vegetarisch";
+  ta.maxLength = 2000;
+
+  const los = document.createElement("button");
+  los.className = "primary";
+  los.textContent = "Vorschlag holen";
+
+  const msg = document.createElement("p");
+  msg.className = "msg";
+  msg.hidden = true;
+
+  los.addEventListener("click", async () => {
+    const anweisung = ta.value.trim();
+    if (!anweisung) {
+      ta.focus();
+      return;
+    }
+    los.disabled = true;
+    msg.hidden = false;
+    msg.className = "msg";
+    msg.textContent = "Die KI überarbeitet das Rezept …";
+    try {
+      const res = await api(`/api/jobs/${job.id}/revise`, {
+        method: "POST",
+        body: JSON.stringify({ anweisung, recipe: getBasis() || undefined }),
+      });
+      msg.hidden = true;
+      onVorschlag(res.recipe);
+    } catch (err) {
+      msg.className = "msg err";
+      msg.textContent = err.message;
+    } finally {
+      los.disabled = false;
+    }
+  });
+
+  box.append(field(ta), los, msg);
+  return box;
+}
+
+/** Editierbares Rezept-Formular. Speichern schreibt Mealie (und Notion) neu. */
+function buildEditor(job, { vorschlag = false } = {}) {
   const r = job.recipe;
   const wrap = document.createElement("div");
+
+  if (vorschlag) {
+    const hinweis = document.createElement("p");
+    hinweis.className = "msg vorschlag";
+    hinweis.textContent =
+      "✨ Vorschlag der KI – noch nicht gespeichert. Prüfen, bei Bedarf anpassen, " +
+      "dann speichern. Verwerfen: Fenster schließen.";
+    wrap.appendChild(hinweis);
+  }
 
   const titleRow = document.createElement("div");
   titleRow.className = "field row";
@@ -713,7 +787,11 @@ function buildEditor(job) {
 
   const save = document.createElement("button");
   save.className = "primary";
-  save.textContent = job.notionPageUrl ? "Korrigieren & Notion aktualisieren" : "Nach Notion schreiben";
+  save.textContent = vorschlag
+    ? "Vorschlag speichern"
+    : job.notionPageUrl || job.mealieUrl
+      ? "Speichern & aktualisieren"
+      : "Speichern";
   const msg = document.createElement("p");
   msg.className = "msg";
   msg.hidden = true;

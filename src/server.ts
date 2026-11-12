@@ -48,6 +48,7 @@ import {
 import { addDays } from "./mealie/planner.ts";
 import { getDataSourceSchema } from "./notion/client.ts";
 import { loadMapping } from "./jobs/mapping.ts";
+import { reviseRecipe } from "./llm/revise.ts";
 import { RecipeSchema } from "./llm/recipeSchema.ts";
 import * as ytdlp from "./extract/ytdlp.ts";
 import { detectPlatform } from "./extract/index.ts";
@@ -570,6 +571,42 @@ export async function buildApp() {
   });
 
   /** Korrigiertes Rezept aus der Web-App erneut in alle Ziele schreiben. */
+  /**
+   * "Mit KI überarbeiten": liefert einen Vorschlag, speichert nichts. Der
+   * Vorschlag landet im Editor; gespeichert wird ueber PUT .../recipe.
+   */
+  app.post("/api/jobs/:id/revise", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const job = getJob(id);
+    if (!job) return reply.code(404).send({ error: "Job nicht gefunden." });
+    if (!job.recipe) {
+      return reply.code(409).send({ error: "Zu diesem Eintrag gibt es noch kein Rezept." });
+    }
+    const anweisung = (request.body as { anweisung?: unknown } | undefined)?.anweisung;
+    if (typeof anweisung !== "string" || anweisung.trim().length < 2) {
+      return reply.code(400).send({ error: "Was soll sich ändern?" });
+    }
+    if (anweisung.length > 2000) {
+      return reply.code(413).send({ error: "Die Anweisung ist zu lang (höchstens 2.000 Zeichen)." });
+    }
+    try {
+      // Gespeicherte Rezepte zuerst durchs Schema: aeltere Eintraege tragen
+      // sonst Altlasten wie doppelte Mengen in den Vorschlag.
+      // Ein mitgeschickter Vorschlag geht vor: Dann wird er weiter verfeinert,
+      // statt wieder beim gespeicherten Stand anzufangen.
+      const mitgeschickt = (request.body as { recipe?: unknown }).recipe;
+      const vorschlag = mitgeschickt ? RecipeSchema.safeParse(mitgeschickt) : undefined;
+      if (vorschlag && !vorschlag.success) {
+        return reply.code(400).send({ error: "Der mitgeschickte Vorschlag ist unvollständig." });
+      }
+      const aktuell = vorschlag ?? RecipeSchema.safeParse(job.recipe);
+      const recipe = await reviseRecipe(aktuell.success ? aktuell.data : job.recipe, anweisung);
+      return { recipe };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   app.put("/api/jobs/:id/recipe", async (request, reply) => {
     const { id } = request.params as { id: string };
     const job = getJob(id);
