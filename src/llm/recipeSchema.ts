@@ -164,7 +164,9 @@ export const GEMINI_RESPONSE_SCHEMA = {
                     "Singular, ohne Menge, ohne Zubereitung, Form oder Zuschnitt. " +
                     "'Zwiebel' bei '2 Zwiebeln, fein gewürfelt', 'Hähnchenbrust' bei " +
                     "'Hähnchenbruststücke', 'Brokkoli' bei 'Brokkoliröschen', 'Orzo' bei " +
-                    "'Orzo (Risoni-Nudeln)'. Keine Beispiele oder Alternativen: 'Petersilie' " +
+                    "'Orzo (Risoni-Nudeln)'. Was abgemessen wird, bleibt das abgemessene " +
+                    "Produkt: 'Zitronensaft' bei '2 EL Zitronensaft', aber 'Zitrone' bei " +
+                    "'Saft einer Zitrone'. Keine Beispiele oder Alternativen: 'Petersilie' " +
                     "bei 'Kräuter, z. B. Petersilie oder Basilikum'.",
                 },
               },
