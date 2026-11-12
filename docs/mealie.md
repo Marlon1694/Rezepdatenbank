@@ -268,18 +268,31 @@ Mobile App*. Lieber erst planen? Dann `#wochenplan` statt `#einkauf`.
 Erst wenn Schritt 4 klappt. Zuerst nur anschauen, was passieren würde:
 
 ```bash
-docker compose exec app npm run migrate:mealie
+docker compose exec app npm run migrate:mealie -- --aufwerten
 ```
 
 Dann wirklich:
 
 ```bash
-docker compose exec app npm run migrate:mealie -- --ausfuehren
+docker compose exec app npm run migrate:mealie -- --ausfuehren --aufwerten
 ```
 
-Übernommen werden alle Rezepte aus dem Verlauf der App — mit Zutaten, Schritten,
-Tags und Titelbild. Was schon in Mealie steht, wird übersprungen. Ein zweiter Lauf
-ist also unschädlich.
+Übernommen werden alle Rezepte aus dem Verlauf der App und alle Notion-Seiten —
+mit Zutaten, Schritten, Tags und Titelbild. Was schon in Mealie steht, wird
+übersprungen. Ein zweiter Lauf ist also unschädlich.
+
+**`--aufwerten`** ergänzt Rezepte, die vor den zerlegten Zutaten gespeichert wurden.
+Je Rezept eine KI-Anfrage, nur mit dem Rezepttext:
+
+- **Mealie:** Menge, Einheit und Lebensmittel getrennt — Portionen umrechnen,
+  Einkaufsliste fasst zusammen — und die Zutaten neben den Schritten im Kochmodus.
+- **Notion:** unter jeden Schritt die graue Zeile „↳ 200 g Mehl · 2 Eier". Sonst
+  bleibt die Seite, wie sie ist: Kommentare, eigene Notizen, Titelbild, in Notion
+  korrigierte Mengen. Passt die Zahl der Schritte in Notion nicht mehr zum
+  Rezept, bleibt die Seite ganz unverändert; die Liste am Ende nennt sie.
+
+Titel, Zutatentexte und Schritte ändert die KI nicht — sie liefert nur Nummern und
+die drei Zutatenfelder zurück.
 
 ## Wenn etwas hakt
 

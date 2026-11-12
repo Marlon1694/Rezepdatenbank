@@ -3,6 +3,7 @@
  *
  *   npm run migrate:mealie                 zeigt nur, was passieren wuerde
  *   npm run migrate:mealie -- --ausfuehren  legt wirklich an
+ *   ... --ausfuehren --aufwerten            und ergaenzt alte Rezepte (siehe unten)
  *
  * Zwei Quellen:
  *   1. Der Verlauf der App. Dort liegt jedes Rezept strukturiert vor - es geht
@@ -15,6 +16,13 @@
  *
  * Was in Mealie schon steht, wird uebersprungen. Ein zweiter Lauf ist also
  * unschaedlich.
+ *
+ * --aufwerten: Rezepte von vor den zerlegten Zutaten bekommen je eine
+ * KI-Anfrage (ohne Video, nur der Rezepttext), die Anzahl, Einheit und
+ * Lebensmittel ergaenzt und welche Zutat zu welchem Schritt gehoert. Mealie
+ * erhaelt das vollstaendige Rezept, in Notion kommt unter jeden Schritt die
+ * Zutatenzeile - sonst bleibt die Notion-Seite unberuehrt. Rezepte, die
+ * schon in Mealie stehen, werden dabei aktualisiert.
  */
 import { getConfig } from "../src/config.ts";
 import { listJobs, updateJob, closeDb } from "../src/jobs/store.ts";
@@ -24,6 +32,8 @@ import { fetchThumbnail } from "../src/notion/cover.ts";
 import { loadMapping } from "../src/jobs/mapping.ts";
 import { mealieEnabled, mealieSelf } from "../src/mealie/client.ts";
 import { upsertMealieRecipe, findExisting } from "../src/mealie/recipes.ts";
+import { enrichRecipe, needsEnrichment } from "../src/llm/enrich.ts";
+import { addStepLinesToPage } from "../src/notion/stepLines.ts";
 import {
   recipeFromNotionPage,
   type NotionBlock,
@@ -33,6 +43,7 @@ import type { Recipe } from "../src/llm/recipeSchema.ts";
 import type { GeneratedImage } from "../src/llm/image.ts";
 
 const ausfuehren = process.argv.includes("--ausfuehren");
+const aufwerten = process.argv.includes("--aufwerten");
 
 interface NotionPage {
   id: string;
@@ -85,6 +96,12 @@ interface Kandidat {
   sourceUrl: string;
   page?: NotionPage;
   jobId?: string;
+  /** Steht schon in Mealie - nur beim Aufwerten ein Kandidat. */
+  mealieSlug?: string;
+  notionPageId?: string;
+  aiNotice?: string;
+  /** Bekommt eine KI-Anfrage fuer Zutaten und Schritt-Zuordnung. */
+  aufwerten: boolean;
 }
 
 async function main(): Promise<void> {
@@ -105,7 +122,8 @@ async function main(): Promise<void> {
   // der Seite zu geben.
   const ausVerlauf = new Map<string, Kandidat | null>();
   for (const job of jobs) {
-    if (job.mealieSlug) {
+    const alt = aufwerten && needsEnrichment(job.recipe!);
+    if (job.mealieSlug && !alt) {
       if (job.notionPageId) ausVerlauf.set(ohneStrich(job.notionPageId), null);
       uebersprungen.push(`${job.recipe!.titel} — schon in Mealie`);
       continue;
@@ -116,6 +134,10 @@ async function main(): Promise<void> {
       recipe: job.recipe!,
       sourceUrl: job.url,
       jobId: job.id,
+      mealieSlug: job.mealieSlug ?? undefined,
+      notionPageId: job.notionPageId ?? undefined,
+      aiNotice: job.aiNotice ?? undefined,
+      aufwerten: alt,
     };
     kandidaten.push(k);
     if (job.notionPageId) ausVerlauf.set(ohneStrich(job.notionPageId), k);
@@ -166,6 +188,8 @@ async function main(): Promise<void> {
         recipe: parsed.recipe,
         sourceUrl: parsed.sourceUrl,
         page,
+        notionPageId: page.id,
+        aufwerten: aufwerten && !parsed.mitZutatenzeilen && needsEnrichment(parsed.recipe),
       });
     }
   }
@@ -174,7 +198,13 @@ async function main(): Promise<void> {
   console.log(`\n  ${kandidaten.length} Rezept(e) zu übernehmen:`);
   for (const k of kandidaten) {
     const z = k.recipe.zutaten.reduce((n, g) => n + g.eintraege.length, 0);
-    console.log(`    • ${k.titel}  (${k.herkunft}, ${z} Zutaten, ${k.recipe.schritte.length} Schritte)`);
+    const extra = [k.mealieSlug ? "schon in Mealie" : "", k.aufwerten ? "wird aufgewertet" : ""]
+      .filter(Boolean)
+      .join(", ");
+    console.log(
+      `    • ${k.titel}  (${k.herkunft}, ${z} Zutaten, ${k.recipe.schritte.length} Schritte` +
+        `${extra ? `; ${extra}` : ""})`,
+    );
   }
   if (uebersprungen.length) {
     console.log(`\n  ${uebersprungen.length} übersprungen:`);
@@ -182,52 +212,96 @@ async function main(): Promise<void> {
   }
 
   if (!ausfuehren) {
+    const n = kandidaten.filter((k) => k.aufwerten).length;
+    if (n) console.log(`\n  ${n} Rezept(e) würden aufgewertet - je eine KI-Anfrage.`);
     console.log(`\n  Probelauf - nichts angelegt. Wirklich übernehmen mit:`);
-    console.log(`    npm run migrate:mealie -- --ausfuehren\n`);
+    console.log(`    npm run migrate:mealie -- --ausfuehren${aufwerten ? " --aufwerten" : ""}\n`);
     return;
   }
 
   console.log("");
   let ok = 0;
   const fehler: string[] = [];
+  const notionHinweise: string[] = [];
   for (const [i, k] of kandidaten.entries()) {
+    const nr = `[${i + 1}/${kandidaten.length}]`;
     try {
+      let recipe = k.recipe;
+      let aufgewertet = false;
+      if (k.aufwerten) {
+        try {
+          recipe = await enrichRecipe(recipe);
+          aufgewertet = true;
+        } catch (err) {
+          // Ohne Aufwertung geht es trotzdem nach Mealie - nur ohne den Komfort.
+          const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
+          console.log(`  ${nr} Aufwerten fehlgeschlagen (${msg}), übernehme ohne: ${k.titel}`);
+        }
+      }
+
       // Steht es schon in Mealie, bleibt es unangetastet - dort hast du es
       // inzwischen womoeglich bearbeitet. Nur die Verknuepfung wird gemerkt.
-      const da = await findExisting({
-        recipe: k.recipe,
-        sourceUrl: k.sourceUrl,
-        dedupeByName: !k.sourceUrl,
-      });
-      if (da) {
-        if (k.jobId) {
+      // Ausnahme: Es wurde gerade aufgewertet, dann ist genau das gewollt.
+      const da =
+        k.mealieSlug !== undefined
+          ? { slug: k.mealieSlug }
+          : await findExisting({ recipe, sourceUrl: k.sourceUrl, dedupeByName: !k.sourceUrl });
+
+      if (da && !aufgewertet) {
+        if (k.jobId && !k.mealieSlug) {
           updateJob(k.jobId, {
             mealieSlug: da.slug,
             mealieUrl: `${cfg.mealieUrl}/g/${self.groupSlug}/r/${da.slug}`,
           });
         }
-        console.log(`  [${i + 1}/${kandidaten.length}] schon in Mealie, übersprungen: ${k.titel}`);
+        console.log(`  ${nr} schon in Mealie, übersprungen: ${k.titel}`);
         continue;
       }
 
       const r = await upsertMealieRecipe({
-        recipe: k.recipe,
+        recipe,
         sourceUrl: k.sourceUrl,
-        coverImage: await coverOf(k.page),
+        existingSlug: da?.slug,
+        // Ein vorhandenes Rezept behaelt sein Bild.
+        coverImage: da ? undefined : await coverOf(k.page),
+        aiNotice: k.aiNotice,
         dedupeByName: !k.sourceUrl,
       });
       if (k.jobId) {
-        updateJob(k.jobId, { mealieSlug: r.slug, mealieUrl: r.url });
+        updateJob(k.jobId, {
+          mealieSlug: r.slug,
+          mealieUrl: r.url,
+          ...(aufgewertet ? { recipe } : {}),
+        });
       }
       ok++;
-      console.log(`  [${i + 1}/${kandidaten.length}] angelegt: ${k.titel}`);
+
+      let notionTeil = "";
+      if (aufgewertet && cfg.notionEnabled && k.notionPageId) {
+        try {
+          const n = await addStepLinesToPage(k.notionPageId, recipe);
+          if (n.ok) notionTeil = `, Notion: ${n.geaendert} Schritt(e) ergänzt`;
+          else notionHinweise.push(`${k.titel}: ${n.reason} - Notion-Seite unverändert`);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
+          notionHinweise.push(`${k.titel}: ${msg}`);
+        }
+      }
+      console.log(
+        `  ${nr} ${r.updated ? "aktualisiert" : "angelegt"}${aufgewertet ? " und aufgewertet" : ""}` +
+          `: ${k.titel}${notionTeil}`,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       fehler.push(`${k.titel}: ${msg}`);
-      console.log(`  [${i + 1}/${kandidaten.length}] FEHLER: ${k.titel} — ${msg}`);
+      console.log(`  ${nr} FEHLER: ${k.titel} — ${msg}`);
     }
   }
 
+  if (notionHinweise.length) {
+    console.log(`\n  In Notion nicht ergänzt (${notionHinweise.length}):`);
+    for (const h of notionHinweise) console.log(`    – ${h}`);
+  }
   console.log(`\n  Fertig: ${ok} übernommen, ${fehler.length} fehlgeschlagen.`);
   if (fehler.length) {
     console.log(`  Ein zweiter Lauf versucht nur die fehlgeschlagenen erneut.\n`);

@@ -82,38 +82,32 @@ function abschnittFuer(ueberschrift: string): Abschnitt {
 const LISTE = new Set(["to_do", "bulleted_list_item", "numbered_list_item"]);
 const UEBERSCHRIFT = new Set(["heading_1", "heading_2"]);
 
-export interface NotionPageInput {
-  properties: Record<string, NotionProperty>;
-  icon?: { type: string; emoji?: string } | null;
-  blocks: NotionBlock[];
-}
-
-export interface ParsedNotionRecipe {
-  recipe: Recipe;
-  sourceUrl: string;
+export interface StepBlock {
+  /** Der Schritt ohne die Zutatenzeile darunter. */
+  text: string;
+  block: NotionBlock;
 }
 
 /**
- * Gibt das Rezept zurueck oder den Grund, warum die Seite keines ist.
- *
- * `fields` sagt, welche Notion-Spalte welches Feld ist - dieselbe Zuordnung,
- * mit der die App schreibt.
+ * Geht die Bloecke einer Rezeptseite durch und ordnet sie den Abschnitten zu.
+ * Gemeinsame Grundlage fuer das Zuruecklesen und fuers Aufwerten: Beide
+ * muessen dieselben Bloecke als Schritte erkennen, sonst landete die
+ * Zutatenzeile unter dem falschen.
  */
-export function recipeFromNotionPage(
-  page: NotionPageInput,
-  fields: Partial<Record<"titel" | "tags" | "zeit" | "quelle" | "portionen" | "kueche" | "schwierigkeit", string>>,
-): ParsedNotionRecipe | { reason: string } {
-  const prop = (k: keyof typeof fields) => (fields[k] ? page.properties[fields[k]!] : undefined);
-
-  const titel = propertyText(prop("titel"));
-  if (!titel) return { reason: "kein Titel" };
-
+export function walkRecipeBlocks(blocks: NotionBlock[]): {
+  gruppen: { gruppe: string; eintraege: { menge: string | null; zutat: string }[] }[];
+  schritte: StepBlock[];
+  pro_tipp: string;
+  /** Stand unter einem Schritt schon eine Zutatenzeile der App? */
+  mitZutatenzeilen: boolean;
+} {
   const gruppen: { gruppe: string; eintraege: { menge: string | null; zutat: string }[] }[] = [];
-  const schritte: string[] = [];
+  const schritte: StepBlock[] = [];
   let pro_tipp = "";
+  let mitZutatenzeilen = false;
   let abschnitt: Abschnitt = "sonst";
 
-  for (const block of page.blocks) {
+  for (const block of blocks) {
     const text = blockText(block);
 
     if (UEBERSCHRIFT.has(block.type)) {
@@ -143,14 +137,48 @@ export function recipeFromNotionPage(
     } else if (abschnitt === "schritte" && (LISTE.has(block.type) || block.type === "paragraph")) {
       // Die Zutatenzeile, die die App unter jeden Schritt schreibt, ist
       // Anzeige - zum Schritt selbst gehoert sie nicht.
-      const schritt = text
-        .split("\n")
+      const zeilen = text.split("\n");
+      const schritt = zeilen
         .filter((zeile) => !zeile.startsWith(STEP_INGREDIENTS_MARK))
         .join("\n")
         .trim();
-      if (schritt) schritte.push(schritt);
+      if (zeilen.some((zeile) => zeile.startsWith(STEP_INGREDIENTS_MARK))) mitZutatenzeilen = true;
+      if (schritt) schritte.push({ text: schritt, block });
     }
   }
+  return { gruppen, schritte, pro_tipp, mitZutatenzeilen };
+}
+
+export interface NotionPageInput {
+  properties: Record<string, NotionProperty>;
+  icon?: { type: string; emoji?: string } | null;
+  blocks: NotionBlock[];
+}
+
+export interface ParsedNotionRecipe {
+  recipe: Recipe;
+  sourceUrl: string;
+  /** Schon aufgewertet - ein zweiter Lauf fragt die KI nicht noch einmal. */
+  mitZutatenzeilen: boolean;
+}
+
+/**
+ * Gibt das Rezept zurueck oder den Grund, warum die Seite keines ist.
+ *
+ * `fields` sagt, welche Notion-Spalte welches Feld ist - dieselbe Zuordnung,
+ * mit der die App schreibt.
+ */
+export function recipeFromNotionPage(
+  page: NotionPageInput,
+  fields: Partial<Record<"titel" | "tags" | "zeit" | "quelle" | "portionen" | "kueche" | "schwierigkeit", string>>,
+): ParsedNotionRecipe | { reason: string } {
+  const prop = (k: keyof typeof fields) => (fields[k] ? page.properties[fields[k]!] : undefined);
+
+  const titel = propertyText(prop("titel"));
+  if (!titel) return { reason: "kein Titel" };
+
+  const { gruppen, schritte: schrittBloecke, pro_tipp, mitZutatenzeilen } = walkRecipeBlocks(page.blocks);
+  const schritte = schrittBloecke.map((s) => s.text);
 
   const zutaten = gruppen.filter((g) => g.eintraege.length);
   if (!zutaten.length) return { reason: "keine Zutaten gefunden" };
@@ -174,5 +202,5 @@ export function recipeFromNotionPage(
   });
   if (!parsed.success) return { reason: `Rezept unvollständig (${parsed.error.issues[0]?.message})` };
 
-  return { recipe: parsed.data, sourceUrl: propertyText(prop("quelle")) ?? "" };
+  return { recipe: parsed.data, sourceUrl: propertyText(prop("quelle")) ?? "", mitZutatenzeilen };
 }
