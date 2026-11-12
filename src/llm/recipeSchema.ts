@@ -35,7 +35,23 @@ export const ZutatSchema = z.object({
   anzahl: z.number().positive().nullish(),
   einheit: z.string().nullish(),
   lebensmittel: z.string().nullish(),
-});
+}).transform((e) => ({ ...e, zutat: zutatOhneMenge(e.menge, e.zutat) }));
+
+/**
+ * Seit es die zerlegten Felder gibt, schreibt Gemini die Menge gern zusaetzlich
+ * in `zutat` - "500 g" + "500 g Karotten". Notion zeigt dann "500 g 500 g
+ * Karotten". Steht die Menge vorn im Zutatentext, wird sie dort gestrichen.
+ */
+export function zutatOhneMenge(menge: string | null | undefined, zutat: string): string {
+  const m = menge?.trim();
+  if (!m) return zutat;
+  const muster = m
+    .split(/\s+/)
+    .map((teil) => teil.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("\\s+");
+  const rest = zutat.replace(new RegExp(`^\\s*${muster}\\s+`, "i"), "").trim();
+  return rest || zutat;
+}
 
 export const ZutatenGruppeSchema = z.object({
   /** "Zutaten" bei einfachen Rezepten, sonst z.B. "Fuer den Teig". */
@@ -120,7 +136,12 @@ export const GEMINI_RESPONSE_SCHEMA = {
                   type: "string",
                   description: "Weglassen, wenn im Material keine Menge genannt wird",
                 },
-                zutat: { type: "string" },
+                zutat: {
+                  type: "string",
+                  description:
+                    "Die Zutat OHNE die Menge aus 'menge': 'Zwiebeln, fein gewürfelt' - " +
+                    "nicht '2 Zwiebeln, fein gewürfelt'.",
+                },
                 anzahl: {
                   type: "number",
                   description:

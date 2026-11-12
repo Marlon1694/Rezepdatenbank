@@ -25,7 +25,15 @@ export function stepIngredientIndices(recipe: Recipe): number[][] {
   const eintraege = recipe.zutaten.flatMap((g) => g.eintraege);
   const nachName = new Map<string, number[]>();
   eintraege.forEach((z, i) => {
-    const namen = [z.zutat, z.zutat.split(",")[0] ?? "", z.lebensmittel ?? ""].map(norm).filter(Boolean);
+    // Auch "500 g Karotten": Gemini nennt die Zutat im Schritt manchmal samt Menge.
+    const namen = [
+      z.zutat,
+      z.zutat.split(",")[0] ?? "",
+      z.lebensmittel ?? "",
+      z.menge ? `${z.menge} ${z.zutat}` : "",
+    ]
+      .map(norm)
+      .filter(Boolean);
     for (const n of new Set(namen)) nachName.set(n, [...(nachName.get(n) ?? []), i]);
   });
 
