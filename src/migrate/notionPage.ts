@@ -204,3 +204,94 @@ export function recipeFromNotionPage(
 
   return { recipe: parsed.data, sourceUrl: propertyText(prop("quelle")) ?? "", mitZutatenzeilen };
 }
+
+/* ── Seiten, deren Rezept nicht in Ueberschriften gegliedert ist ───────────── */
+
+export type NotionFields = Partial<
+  Record<"titel" | "tags" | "zeit" | "quelle" | "portionen" | "kueche" | "schwierigkeit", string>
+>;
+
+/** Was die Spalten der Seite ueber das Rezept sagen - unabhaengig vom Inhalt. */
+export interface NotionMeta {
+  titel: string | null;
+  emoji?: string;
+  tags: string[];
+  zeit_text: string;
+  zeit_minuten?: number;
+  portionen: string | null;
+  kueche: string | null;
+  schwierigkeit: string | null;
+  sourceUrl: string;
+}
+
+export function notionMeta(page: Omit<NotionPageInput, "blocks">, fields: NotionFields): NotionMeta {
+  const prop = (k: keyof NotionFields) => (fields[k] ? page.properties[fields[k]!] : undefined);
+  const zeit = propertyText(prop("zeit"));
+  const zeitMinuten = zeit && /^\d+$/.test(zeit) ? Number(zeit) : undefined;
+  return {
+    titel: propertyText(prop("titel")),
+    emoji: page.icon?.type === "emoji" && page.icon.emoji ? page.icon.emoji : undefined,
+    tags: propertyList(prop("tags")).map((t) => t.replace(/^#/, "")),
+    zeit_text: zeitMinuten ? `${zeitMinuten} Minuten` : (zeit ?? ""),
+    zeit_minuten: zeitMinuten,
+    portionen: propertyText(prop("portionen")),
+    kueche: propertyText(prop("kueche")),
+    schwierigkeit: propertyText(prop("schwierigkeit")),
+    sourceUrl: propertyText(prop("quelle")) ?? "",
+  };
+}
+
+const EMOJI = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu;
+
+/** "🍝 Hackbällchen Toscana" -> "Hackbällchen Toscana" (das Emoji kommt ins eigene Feld). */
+export function titelOhneEmoji(titel: string): string {
+  return titel.replace(EMOJI, "").replace(/\s+/g, " ").trim();
+}
+
+function nurGrau(block: NotionBlock): boolean {
+  const inner = block[block.type] as { rich_text?: { annotations?: { color?: string } }[] } | undefined;
+  const rt = inner?.rich_text ?? [];
+  return rt.length > 0 && rt.every((t) => (t.annotations?.color ?? "").startsWith("gray"));
+}
+
+/**
+ * Der Rezepttext einer Seite als Klartext - fuer die KI, wenn der Parser
+ * keine Gliederung findet. Notions Vorlagenhinweise sind grau und fallen
+ * weg, ebenso der Abschnitt "Verbesserungen für das nächste Mal": Das sind
+ * deine Notizen, kein Teil des Rezepts.
+ */
+export function pageText(blocks: NotionBlock[]): string {
+  const zeilen: string[] = [];
+  let notizen = false;
+  for (const block of blocks) {
+    const text = blockText(block);
+    if (/^heading_[123]$/.test(block.type)) {
+      notizen = /verbesser/i.test(text);
+      if (!notizen && text) zeilen.push(`## ${text}`);
+      continue;
+    }
+    if (notizen || !text || nurGrau(block)) continue;
+    const marke =
+      block.type === "numbered_list_item" ? "1. " : LISTE.has(block.type) ? "- " : "";
+    zeilen.push(marke + text);
+  }
+  return zeilen.join("\n").trim();
+}
+
+/** Spalten der Seite gehen vor: Titel, Tags, Zeit, Portionen, Kueche, Schwierigkeit. */
+export function withNotionMeta(recipe: Recipe, meta: NotionMeta): Recipe {
+  const titel = meta.titel ? titelOhneEmoji(meta.titel) : "";
+  const ersteEmoji = meta.titel?.match(EMOJI)?.join("").slice(0, 8);
+  return {
+    ...recipe,
+    titel: titel || recipe.titel,
+    emoji: ersteEmoji || recipe.emoji,
+    tags: [...new Set([...meta.tags, ...recipe.tags])],
+    zeit_text: meta.zeit_text || recipe.zeit_text,
+    zeit_minuten: meta.zeit_minuten ?? recipe.zeit_minuten,
+    portionen: meta.portionen ?? recipe.portionen,
+    kueche: meta.kueche ?? recipe.kueche,
+    schwierigkeit: meta.schwierigkeit ?? recipe.schwierigkeit,
+  };
+}
+

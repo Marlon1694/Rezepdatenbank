@@ -299,6 +299,15 @@ einmal — etwa nachdem die Regeln dafür besser geworden sind. Kostet je Rezept
 KI-Anfrage; bei vielen Rezepten auf zwei Tage verteilen, falls das Gemini-Kontingent
 knapp wird.
 
+**Notion-Seiten ohne Gliederung** — etwa aus Notions Rezeptvorlage, deren Inhalt in
+einem KI-Block steht: Den Block in Notion erst in normalen Text umwandeln (in den
+Block klicken → „Darunter einfügen", dann den leeren KI-Block löschen). Den Inhalt
+von KI-Blöcken gibt Notion über keine Schnittstelle heraus. Danach liest die
+Übernahme den Seitentext mit der KI, übernimmt nur, was dasteht, und nimmt Titel,
+Tags, Zeit und Schwierigkeit aus den Spalten. Statt des Unsplash-Standardbilds der
+Vorlage gibt es ein erzeugtes Titelbild, wenn `COVER_SOURCE=ai` gesetzt ist. Deine
+Notizen unter „Verbesserungen für das nächste Mal" bleiben in Notion.
+
 **Spannen** wie „1–2 Zehen" speichert Mealie als untere Zahl, die ganze Angabe steht
 als Notiz dabei: „1 Zehe Knoblauch — 1–2 Zehen, gehackt".
 

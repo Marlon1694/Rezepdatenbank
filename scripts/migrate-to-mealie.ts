@@ -35,7 +35,13 @@ import { mealieEnabled, mealieSelf } from "../src/mealie/client.ts";
 import { upsertMealieRecipe, findExisting } from "../src/mealie/recipes.ts";
 import { enrichRecipe, needsEnrichment } from "../src/llm/enrich.ts";
 import { addStepLinesToPage } from "../src/notion/stepLines.ts";
+import { extractRecipe } from "../src/llm/index.ts";
+import { generateCoverImage } from "../src/llm/image.ts";
 import {
+  notionMeta,
+  pageText,
+  withNotionMeta,
+  titelOhneEmoji,
   recipeFromNotionPage,
   type NotionBlock,
   type NotionProperty,
@@ -93,10 +99,25 @@ async function coverOf(page: NotionPage | undefined): Promise<GeneratedImage | u
   return url ? fetchThumbnail(url) : undefined;
 }
 
+/**
+ * Notions Rezeptvorlage setzt bei jeder Seite dasselbe Stockfoto von Unsplash.
+ * Das zeigt nie das Gericht - dann lieber ein erzeugtes Bild, wenn eingeschaltet.
+ */
+function hatVorlagenbild(page: NotionPage | undefined): boolean {
+  const url = page?.cover?.type === "external" ? (page.cover.external?.url ?? "") : "";
+  return /images\.unsplash\.com/.test(url);
+}
+
+/** Ab so viel Text lohnt sich der Versuch, daraus ein Rezept zu machen. */
+const MIN_SEITENTEXT = 80;
+
 interface Kandidat {
   titel: string;
   herkunft: "Verlauf" | "Notion";
-  recipe: Recipe;
+  /** Fehlt bei Seiten ohne Gliederung - dann macht die KI es aus `ausText`. */
+  recipe?: Recipe;
+  /** Seitentext fuer die KI, samt den Angaben aus den Spalten. */
+  ausText?: { text: string; meta: ReturnType<typeof notionMeta> };
   sourceUrl: string;
   page?: NotionPage;
   jobId?: string;
@@ -197,6 +218,25 @@ async function main(): Promise<void> {
       if ("reason" in parsed) {
         const t = page.properties[fields.titel ?? ""];
         const titel = t && t.type === "title" ? ((t.title as { plain_text: string }[])[0]?.plain_text ?? page.id) : page.id;
+        // Steht das Rezept als Fliesstext da - etwa aus einem umgewandelten
+        // KI-Block, mit fetten Zeilen statt Ueberschriften -, macht die KI es
+        // daraus. Abgetippt, nicht erfunden.
+        const text = /keine (Zutaten|Zubereitung)/.test(parsed.reason)
+          ? pageText(await allBlocks(page.id))
+          : "";
+        if (text.length >= MIN_SEITENTEXT) {
+          const meta = notionMeta({ properties: page.properties, icon: page.icon }, fields);
+          kandidaten.push({
+            titel: titelOhneEmoji(meta.titel ?? titel),
+            herkunft: "Notion",
+            ausText: { text, meta },
+            sourceUrl: meta.sourceUrl,
+            page,
+            notionPageId: page.id,
+            aufwerten: false,
+          });
+          continue;
+        }
         uebersprungen.push(`${titel} — ${parsed.reason}`);
         continue;
       }
@@ -216,6 +256,10 @@ async function main(): Promise<void> {
   // ── Bericht und Ausfuehrung ──────────────────────────────────────────────
   console.log(`\n  ${kandidaten.length} Rezept(e) zu übernehmen:`);
   for (const k of kandidaten) {
+    if (!k.recipe) {
+      console.log(`    • ${k.titel}  (${k.herkunft}, ohne Gliederung - die KI liest den Seitentext)`);
+      continue;
+    }
     const z = k.recipe.zutaten.reduce((n, g) => n + g.eintraege.length, 0);
     const extra = [k.mealieSlug ? "schon in Mealie" : "", k.aufwerten ? "wird aufgewertet" : ""]
       .filter(Boolean)
@@ -239,6 +283,8 @@ async function main(): Promise<void> {
   if (!ausfuehren) {
     const n = kandidaten.filter((k) => k.aufwerten).length;
     if (n) console.log(`\n  ${n} Rezept(e) würden aufgewertet - je eine KI-Anfrage.`);
+    const t = kandidaten.filter((k) => k.ausText).length;
+    if (t) console.log(`  ${t} Seite(n) ohne Gliederung - je eine KI-Anfrage für das Rezept.`);
     console.log(`\n  Probelauf - nichts angelegt. Wirklich übernehmen mit:`);
     console.log(
       `    npm run migrate:mealie -- --ausfuehren${aufwerten ? " --aufwerten" : ""}${neu ? " --neu" : ""}\n`,
@@ -256,7 +302,31 @@ async function main(): Promise<void> {
   for (const [i, k] of kandidaten.entries()) {
     const nr = `[${i + 1}/${kandidaten.length}]`;
     try {
-      let recipe = k.recipe;
+      let recipe: Recipe;
+      if (k.ausText) {
+        // Steht die Seite schon in Mealie, nicht noch einmal von der KI lesen
+        // lassen: kostet nur, und dort hast du sie womoeglich schon bearbeitet.
+        const schonDa = await findExisting({
+          recipe: { titel: k.titel } as Recipe,
+          sourceUrl: k.sourceUrl,
+          dedupeByName: !k.sourceUrl,
+        });
+        if (schonDa) {
+          console.log(`  ${nr} schon in Mealie, übersprungen: ${k.titel}`);
+          continue;
+        }
+        // Wie ein abfotografiertes Kochbuch: nur uebernehmen, was dasteht.
+        const roh = await extractRecipe({
+          input: k.ausText.text,
+          sourceUrl: k.sourceUrl,
+          mode: "abtippen",
+          sourceTitle: k.titel,
+          platform: "Notion",
+        });
+        recipe = withNotionMeta(roh, k.ausText.meta);
+      } else {
+        recipe = k.recipe!;
+      }
       let aufgewertet = false;
       if (k.aufwerten && !kontingentWeg) {
         try {
@@ -297,7 +367,11 @@ async function main(): Promise<void> {
         sourceUrl: k.sourceUrl,
         existingSlug: da?.slug,
         // Ein vorhandenes Rezept behaelt sein Bild.
-        coverImage: da ? undefined : await coverOf(k.page),
+        coverImage: da
+          ? undefined
+          : hatVorlagenbild(k.page)
+            ? await generateCoverImage(recipe)
+            : await coverOf(k.page),
         aiNotice: k.aiNotice,
         dedupeByName: !k.sourceUrl,
       });
