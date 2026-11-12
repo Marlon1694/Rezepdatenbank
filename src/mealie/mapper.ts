@@ -19,7 +19,8 @@ export interface MealieRef {
 
 export interface Lookups {
   tags: MealieRef[];
-  category?: MealieRef;
+  /** Bereits zusammengefuehrt: was in Mealie steht, plus die Kueche aus der App. */
+  categories: MealieRef[];
   /** Schluessel: normalisierter Name, siehe norm(). */
   foods: Map<string, MealieRef>;
   units: Map<string, MealieRef>;
@@ -171,7 +172,7 @@ export function mapRecipe(recipe: Recipe, lookups: Lookups, opts: MapOptions) {
       ? { recipeServings: servings, recipeYield: null }
       : { recipeYield: recipe.portionen ?? null }),
     tags: lookups.tags,
-    recipeCategory: lookups.category ? [lookups.category] : [],
+    recipeCategory: lookups.categories,
     recipeIngredient: ingredients,
     recipeInstructions: recipe.schritte.map((text, i) => ({
       title: "",

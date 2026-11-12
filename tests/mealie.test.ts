@@ -326,6 +326,21 @@ describe("upsertMealieRecipe", () => {
     expect(namen).toEqual(["Herbst", "Lieblingsessen", "Schnell"]);
   });
 
+  it("behält Kategorien, die in Mealie oder Atelier vergeben wurden", async () => {
+    const erst = await upsertMealieRecipe({ recipe: rezept(), sourceUrl: "https://x.de/k" });
+
+    // In Atelier: "Ofengerichte" dazu.
+    const ofen = { id: "cat-ofen", name: "Ofengerichte", slug: "ofengerichte" };
+    state.categories.push(ofen);
+    const rec = state.recipes.get(erst.slug)!;
+    rec.recipeCategory = (rec.recipeCategory as Ref[]).concat(ofen);
+
+    // Die App schreibt das Rezept erneut - etwa beim Aufwerten.
+    await upsertMealieRecipe({ recipe: rezept({ schritte: ["Neu."] }), sourceUrl: "https://x.de/k" });
+    const namen = (state.recipes.get(erst.slug)!.recipeCategory as Ref[]).map((c) => c.name).sort();
+    expect(namen).toEqual(["Ofengerichte", "Pfälzisch"]);
+  });
+
   it("legt ein in Mealie gelöschtes Rezept neu an", async () => {
     const r = await upsertMealieRecipe({
       recipe: rezept(),

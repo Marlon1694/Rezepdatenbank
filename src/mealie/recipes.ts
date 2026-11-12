@@ -39,6 +39,7 @@ interface MealieRecipe {
   slug: string;
   name: string;
   tags?: MealieRef[];
+  recipeCategory?: MealieRef[];
 }
 
 /* ── Nachschlagen und Anlegen ─────────────────────────────────────────────── */
@@ -200,7 +201,16 @@ export async function upsertMealieRecipe(input: MealieUpsertInput): Promise<Meal
     ...new Map([...(existing?.tags ?? []), ...neueTags].map((t) => [t.id, t])).values(),
   ];
 
-  const [category] = recipe.kueche ? await ensureOrganizers("categories", [recipe.kueche]) : [];
+  const neueKategorien = recipe.kueche
+    ? await ensureOrganizers("categories", [recipe.kueche])
+    : [];
+  // Wie bei den Tags: Kategorien, die du in Mealie oder Atelier vergeben hast,
+  // bleiben. Die Kueche aus der App kommt nur dazu.
+  const categories = [
+    ...new Map(
+      [...(existing?.recipeCategory ?? []), ...neueKategorien].map((c) => [c.id, c]),
+    ).values(),
+  ];
 
   const eintraege = recipe.zutaten.flatMap((g) => g.eintraege);
   const [foods, units] = await Promise.all([
@@ -213,7 +223,7 @@ export async function upsertMealieRecipe(input: MealieUpsertInput): Promise<Meal
     ),
   ]);
 
-  const lookups: Lookups = { tags, category, foods, units };
+  const lookups: Lookups = { tags, categories, foods, units };
 
   const slug =
     existing?.slug ??
