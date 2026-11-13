@@ -1,7 +1,8 @@
 import Fastify, { type FastifyReply } from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyMultipart from "@fastify/multipart";
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync } from "node:fs";
+import { webVersion, versionedIndex } from "./webVersion.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { timingSafeEqual } from "node:crypto";
@@ -124,7 +125,7 @@ export async function buildApp() {
     // Die Web-App selbst ist offen - sie fragt das Token beim ersten Start ab.
     // Geschuetzt ist alles unter /api.
     if (!path.startsWith("/api/")) return;
-    if (path === "/api/health") return;
+    if (path === "/api/health" || path === "/api/version") return;
 
     const header = request.headers.authorization ?? "";
     const provided = header.startsWith("Bearer ") ? header.slice(7) : "";
@@ -636,7 +637,29 @@ export async function buildApp() {
     }
   });
 
-  await app.register(fastifyStatic, { root: join(here, "web"), index: ["index.html"] });
+  // Jede Datei der Web-App bei jedem Laden kurz beim Server nachfragen lassen
+  // (ETag, meist 304) - sonst lieferte ein Zwischenspeicher nach einem Update
+  // die alte Fassung.
+  const webDir = join(here, "web");
+  const version = webVersion(webDir);
+  const indexHtml = versionedIndex(readFileSync(join(webDir, "index.html"), "utf8"), version);
+  const sendIndex = (reply: FastifyReply) =>
+    reply.type("text/html; charset=utf-8").header("Cache-Control", "no-cache").send(indexHtml);
+
+  /** Leicht und ohne Token: Die App fragt das bei jedem Zurueckkehren. */
+  app.get("/api/version", async (_request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return { webVersion: version };
+  });
+  app.get("/", (_request, reply) => sendIndex(reply));
+  app.get("/index.html", (_request, reply) => sendIndex(reply));
+
+  await app.register(fastifyStatic, {
+    root: webDir,
+    index: false,
+    cacheControl: false,
+    setHeaders: (reply) => void reply.header("Cache-Control", "no-cache"),
+  });
 
   /** Zeigt die fertigen Kurzbefehl-Werte mit der echten Adresse und dem Token. */
   app.get("/setup", (_request, reply) => reply.sendFile("setup.html"));
@@ -646,7 +669,7 @@ export async function buildApp() {
     if (request.url.startsWith("/api/")) {
       return reply.code(404).send({ error: "Unbekannter Endpunkt." });
     }
-    return reply.sendFile("index.html");
+    return sendIndex(reply);
   });
 
   return app;
