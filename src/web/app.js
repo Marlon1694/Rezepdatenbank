@@ -929,6 +929,42 @@ function start() {
   if (shared) submitUrl(true);
 }
 
+/* ── Nach einem Update neu laden ──────────────────────────────────────────── */
+
+/* iOS holt die App vom Home-Bildschirm oft nur aus dem Speicher zurück, statt
+   sie neu zu laden - mit dem alten Programmcode. Beim Zurückkehren deshalb die
+   Fassung beim Server erfragen und bei einem Unterschied einmal neu laden. */
+const WEB_VERSION = document.querySelector('meta[name="web-version"]')?.content || "";
+const RELOAD_KEY = "rezepte.reloadedFor";
+let versionCheckAt = 0;
+
+async function checkForUpdate() {
+  if (!WEB_VERSION || Date.now() - versionCheckAt < 30_000) return;
+  versionCheckAt = Date.now();
+  try {
+    const res = await fetch("/api/version", { cache: "no-store" });
+    const { webVersion } = await res.json();
+    if (!webVersion || webVersion === WEB_VERSION) return;
+    // Nie zweimal für dieselbe Fassung: Liefert irgendein Zwischenspeicher
+    // trotzdem die alte Seite, soll die App nicht endlos neu laden.
+    let schon = "";
+    try { schon = sessionStorage.getItem(RELOAD_KEY) || ""; } catch { /* egal */ }
+    if (schon === webVersion) return;
+    try { sessionStorage.setItem(RELOAD_KEY, webVersion); } catch { /* egal */ }
+    location.reload();
+  } catch {
+    /* Offline oder Server neu gestartet - beim nächsten Mal wieder. */
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") checkForUpdate();
+});
+// Aus dem Zwischenspeicher des Browsers zurückgeholt (Zurück-Taste, iOS).
+window.addEventListener("pageshow", (e) => {
+  if (e.persisted) checkForUpdate();
+});
+
 if (token) {
   api("/api/jobs?limit=1").then(start).catch(() => {});
 } else {
